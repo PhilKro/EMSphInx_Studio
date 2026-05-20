@@ -29,6 +29,8 @@ class TabQueue(ttk.Frame):
         self.var_wsl_dir = tk.StringVar(value=self.app.config.get("wsl_executable_dir", ""))
         self.var_wsl_dir.trace_add("write", self.save_wsl_config)
         ttk.Entry(cfg_frame, textvariable=self.var_wsl_dir, width=40).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(cfg_frame, text="Configure Network Mounts", command=self.configure_mounts).pack(side=tk.RIGHT, padx=5)
 
         table_frame = ttk.LabelFrame(self, text="Indexing Queue", padding=10)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -71,6 +73,68 @@ class TabQueue(ttk.Frame):
         self.app.config["wsl_distro"] = self.var_distro.get()
         self.app.config["wsl_executable_dir"] = self.var_wsl_dir.get()
         utils.save_json(utils.CONFIG_FILE, self.app.config)
+
+    def configure_mounts(self):
+        top = tk.Toplevel(self.app.root)
+        top.title("Network Mounts")
+        top.geometry("600x300")
+        top.transient(self.app.root)
+        top.grab_set()
+        
+        ttk.Label(top, text="Map WSL Mount Points to Windows Network Shares", font=("Helvetica", 10, "bold")).pack(pady=10)
+        
+        cols = ("wsl", "win")
+        tree = ttk.Treeview(top, columns=cols, show="headings", height=5)
+        tree.heading("wsl", text="WSL Mount Point (e.g. /mnt/n)")
+        tree.heading("win", text="Windows Share (e.g. \\\\server\\share)")
+        tree.column("wsl", width=200)
+        tree.column("win", width=350)
+        tree.pack(fill=tk.BOTH, expand=True, padx=10)
+        
+        mounts = self.app.config.get("wsl_network_mounts", {})
+        for wsl, win in mounts.items():
+            tree.insert("", tk.END, values=(wsl, win))
+            
+        ctrl = ttk.Frame(top)
+        ctrl.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(ctrl, text="WSL:").pack(side=tk.LEFT)
+        var_wsl = tk.StringVar()
+        ttk.Entry(ctrl, textvariable=var_wsl, width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(ctrl, text="Win:").pack(side=tk.LEFT)
+        var_win = tk.StringVar()
+        ttk.Entry(ctrl, textvariable=var_win, width=30).pack(side=tk.LEFT, padx=5)
+        
+        def add_mount():
+            w = var_wsl.get().strip()
+            v = var_win.get().strip()
+            if w and v:
+                tree.insert("", tk.END, values=(w, v))
+                var_wsl.set("")
+                var_win.set("")
+        
+        ttk.Button(ctrl, text="Add", command=add_mount).pack(side=tk.LEFT, padx=5)
+        
+        def remove_mount():
+            sel = tree.selection()
+            for s in sel:
+                tree.delete(s)
+                
+        ttk.Button(ctrl, text="Remove Selected", command=remove_mount).pack(side=tk.LEFT, padx=5)
+        
+        def save():
+            new_mounts = {}
+            for item in tree.get_children():
+                w, v = tree.item(item, "values")
+                new_mounts[w] = v
+            self.app.config["wsl_network_mounts"] = new_mounts
+            utils.save_json(utils.CONFIG_FILE, self.app.config)
+            top.destroy()
+            
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Save & Close", command=save).pack()
 
     def add_job(self, scan_target, nml_path, status="Pending"):
         item_id = self.tree.insert("", tk.END, values=(status, scan_target, nml_path))
@@ -193,27 +257,6 @@ class TabQueue(ttk.Frame):
             self.thread = threading.Thread(target=self._worker, daemon=True)
             self.thread.start()
 
-    def _get_sudo_password(self):
-        saved_pwd = self.app.config.get("wsl_sudo_password", "")
-        pwd_result = [None]
-        event = threading.Event()
-        
-        def ask():
-            import tkinter.simpledialog
-            msg = "Network mount required. Is this sudo password correct?\nLeave blank to cancel."
-            if not saved_pwd:
-                msg = "Network mount required. Please enter WSL sudo password:"
-            pwd = tkinter.simpledialog.askstring("WSL Sudo", msg, initialvalue=saved_pwd, show="*")
-            if pwd is not None:
-                self.app.config["wsl_sudo_password"] = pwd
-                utils.save_json(utils.CONFIG_FILE, self.app.config)
-            pwd_result[0] = pwd
-            event.set()
-            
-        self.app.root.after(0, ask)
-        event.wait()
-        return pwd_result[0]
-
     def check_and_mount_network_drives(self):
         distro = self.app.config.get("wsl_distro", "Debian")
         mounts = self.app.config.get("wsl_network_mounts", {})
@@ -224,27 +267,26 @@ class TabQueue(ttk.Frame):
             if self.stop_flag: return False
             
             # Check if directory exists
-            check_dir_cmd = f'wsl -d {distro} -- bash -c "if [ ! -d \'{mnt_point}\' ]; then echo missing; fi"'
+            check_dir_cmd = f'wsl -d {distro} -u root -- bash -c "if [ ! -d \'{mnt_point}\' ]; then echo missing; fi"'
             res = subprocess.run(check_dir_cmd, shell=True, capture_output=True, text=True)
             if "missing" in res.stdout:
-                pwd = self._get_sudo_password()
-                if not pwd: return False
-                mk_cmd = f'wsl -d {distro} -- bash -c "sudo -S mkdir -p \'{mnt_point}\'"'
-                subprocess.run(mk_cmd, shell=True, input=pwd + "\n", text=True)
+                mk_cmd = f'wsl -d {distro} -u root -- mkdir -p \'{mnt_point}\''
+                subprocess.run(mk_cmd, shell=True, text=True)
                 
             # Check if mounted
-            check_mnt_cmd = f'wsl -d {distro} -- bash -c "mount"'
+            check_mnt_cmd = f'wsl -d {distro} -- mount'
             res = subprocess.run(check_mnt_cmd, shell=True, capture_output=True, text=True)
             if f" {mnt_point} " not in res.stdout:
                 self.app.root.after(0, self.append_console, f"\n--- Mounting network drive: {win_share} -> {mnt_point} ---\n", False)
-                pwd = self._get_sudo_password()
-                if not pwd: return False
-                mnt_cmd = f'wsl -d {distro} -- bash -c "sudo -S mount -t drvfs \'{win_share}\' \'{mnt_point}\'"'
-                mnt_res = subprocess.run(mnt_cmd, shell=True, input=pwd + "\n", capture_output=True, text=True)
-                if "incorrect password" in mnt_res.stderr.lower() or "incorrect password" in mnt_res.stdout.lower():
-                    self.app.root.after(0, messagebox.showerror, "Mount Error", "Incorrect sudo password.")
-                    self.app.config["wsl_sudo_password"] = "" # Clear bad password
-                    utils.save_json(utils.CONFIG_FILE, self.app.config)
+                # Escape backslashes for bash/WSL argument passing
+                win_share_esc = win_share.replace('\\', '\\\\')
+                mnt_cmd = f'wsl -d {distro} -u root -- mount -t drvfs \'{win_share_esc}\' \'{mnt_point}\''
+                mnt_res = subprocess.run(mnt_cmd, shell=True, capture_output=True, text=True)
+                
+                if mnt_res.returncode != 0:
+                    err_msg = f"Mount Error:\n{mnt_res.stdout}\n{mnt_res.stderr}\n"
+                    self.app.root.after(0, self.append_console, err_msg, False)
+                    self.app.root.after(0, messagebox.showerror, "Mount Error", f"Failed to mount {win_share} to {mnt_point}.\nCheck console for details.")
                     return False
         return True
 

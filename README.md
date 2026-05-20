@@ -1,15 +1,15 @@
 # EMSphInx Studio
 
-EMSphInx Studio is a powerful, cross-platform graphical user interface designed to bridge local Windows desktop environments with high-performance spherical indexing tools running under the Windows Subsystem for Linux (WSL).
+EMSphInx Studio is a graphical user interface designed for **EMSphInx**, a software package for **spherical indexing of electron diffraction patterns** running under the Windows Subsystem for Linux (WSL).
 
-It provides seamless integration for visualizing, managing, and automatically processing massive EBSD datasets from both **EDAX (.edaxh5 + .up1)** and **Oxford Instruments (.h5oina)** systems.
+It provides integration for visualizing, managing, and automatically processing EBSD datasets from **EDAX (.edaxh5 + .up1)** and **Oxford Instruments (.h5oina)** systems.
 
 ## Key Features
 
-- **Interactive Map Viewers**: Instantly load and visualize massive map grids and raw diffraction patterns from binary datasets. Features custom Region of Interest (ROI) drawing and live spatial probing.
-- **Asynchronous Data Unpacking**: Handles giant Oxford `.h5oina` files by asynchronously unpacking packed detector arrays into highly optimized `.up1` binary blocks without freezing the UI.
-- **Intelligent WSL Job Queuing**: A robust execution queue that automatically marshals file paths between Windows and WSL environments, automatically mounts missing network drives, securely manages sudo privileges, and pipes high-performance C++ solver output directly to a live console.
-- **EMsoft Integration**: Instantly fetch, validate, and manage `SHT` Master Patterns directly from the EMsoft GitHub API or load your own local libraries.
+- **Interactive Map Viewers**: Instantly load and visualize map grids and raw diffraction patterns from binary datasets. Features custom Region of Interest (ROI) drawing and live spatial probing of EBSD patterns.
+- **Asynchronous Data Unpacking**: Handles Oxford `.h5oina` files by asynchronously unpacking packed detector arrays into `.up1` files (this is done due to troubles with indexing .h5oina files with EMSphInx, if you find a fix for this please let me know, or make a pull request!).
+- **WSL Job Queuing**: A queue that automatically marshals file paths between Windows and WSL environments, automatically mounts missing network drives, securely manages sudo privileges, and pipes EMSphInx'soutput directly to a live console.
+- **Master Pattern Management**: Instantly fetch, validate, and manage `SHT` Master Patterns directly from the EMsoft GitHub API or load your own local libraries.
 
 ---
 
@@ -26,8 +26,8 @@ To run EMSphInx Studio, ensure you have the following installed:
 - **Tkinter** (Usually included with standard Python installations)
 
 ### Windows Subsystem for Linux (WSL)
-- **WSL 2** configured with a Linux distribution (e.g., Debian, Ubuntu).
-- **EMSphInx** installed and compiled within your WSL environment (specifically, the `IndexEBSD` binary).
+- **WSL 2** configured with a Linux Debian distribution.
+- **EMSphInx** installed and compiled within your WSL environment (specifically, the `IndexEBSD` binary). Use the precompiled Debian version from https://github.com/EMsoft-org/EMSphInx/releases.
 - If your data resides on network drives, WSL must be able to resolve and mount them via `drvfs`.
 
 ---
@@ -48,4 +48,4 @@ When you first launch the application, you must configure the connection to your
 4. **Execute**: Switch to the Job Queue tab. Your jobs will appear as *Pending*. Click **Start Queue** to automatically execute them sequentially through your WSL environment.
 
 ### 3. Help System
-A comprehensive, detailed help system is built directly into the application. Click `Help > EMSphInx Studio Help` in the top menu bar to learn more about specific parameters and interactions for each tab.
+A detailed help window is provided at `Help > EMSphInx Studio Help` in the top menu bar. It includes explanations of specific parameters and interactions for each tab.
