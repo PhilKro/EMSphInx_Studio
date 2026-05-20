@@ -15,6 +15,11 @@ It provides integration for visualizing, managing, and automatically processing 
 
 ## Requirements
 
+Launch from your terminal with:
+```bash
+python main.py
+```
+
 To run EMSphInx Studio, ensure you have the following installed:
 
 ### Windows Host
