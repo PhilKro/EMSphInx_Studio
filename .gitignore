@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# EMSphInx Studio Specific Data
+app_config.json
+last_params.json
+SHT_Library/
+*.up1
+*.edaxh5
+*.h5oina
+*.h5
+*.nml
+
+# Deprecated/Scratch folders
+_depr/
+scratch/
+test_network_h5.py
