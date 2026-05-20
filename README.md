@@ -8,8 +8,8 @@ It provides integration for visualizing, managing, and automatically processing 
 
 - **Interactive Map Viewers**: Instantly load and visualize map grids and raw diffraction patterns from binary datasets. Features custom Region of Interest (ROI) drawing and live spatial probing of EBSD patterns.
 - **Asynchronous Data Unpacking**: Handles Oxford `.h5oina` files by asynchronously unpacking packed detector arrays into `.up1` files (this is done due to troubles with indexing .h5oina files with EMSphInx, if you find a fix for this please let me know, or make a pull request!).
-- **WSL Job Queuing**: A queue that automatically marshals file paths between Windows and WSL environments, automatically mounts missing network drives, securely manages sudo privileges, and pipes EMSphInx'soutput directly to a live console.
-- **Master Pattern Management**: Instantly fetch, validate, and manage `SHT` Master Patterns directly from the EMsoft GitHub API or load your own local libraries.
+- **WSL Job Queuing**: A queue that automatically marshals file paths between Windows and WSL environments, automatically mounts missing network drives, and pipes EMSphInx'soutput directly to a live console.
+- **Master Pattern Management**: Instantly fetch and manage `SHT` Master Patterns directly from the EMsoft GitHub API or load your own local libraries.
 
 ---
 
@@ -37,9 +37,10 @@ To run EMSphInx Studio, ensure you have the following installed:
 ### 1. Configuration
 When you first launch the application, you must configure the connection to your WSL environment:
 - Open the **Job Queue** tab.
-- Set your **WSL Distro** name (e.g., `Debian`).
+- Set your **WSL Distro** name (`Debian`).
 - Provide the **WSL Path** to the directory containing your compiled `IndexEBSD` executable (e.g., `/mnt/c/Software/EMSphInx`).
-- Your settings are saved automatically. If you require WSL network mounting, EMSphInx Studio will securely prompt for your `sudo` password and handle mounting automatically.
+- If your data is located on a network drive, configure the WSL mounting under "Configure Network Mounts" in the "Job Queue" tab.
+- Your settings are saved automatically. If you require WSL network mounting, EMSphInx Studio will handle mounting automatically.
 
 ### 2. Workflow Overview
 1. **System Mode Selection**: Choose either **EDAX** or **Oxford** at the top of the application depending on your data format.
