@@ -1,9 +1,19 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import os
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Fixes "Link iteration failed / eoa=2048" on Windows network drives
 import h5py
+import hdf5plugin
 import os
 import struct
 import numpy as np
+import threading
+import time
+import re
+import urllib.request
+import urllib.parse
+import json
+import shutil
 from PIL import Image, ImageTk
 import utils
 
@@ -13,13 +23,13 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-class TabViewerEdax(ttk.Frame):
+class TabViewerOxford(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
         self.state = app.shared_state
         
-        self.mmap = None
+        self.h5_file = None
         self.current_raw_image = None
         self.tk_img_pattern = None
         self.tk_img_map = None
@@ -51,7 +61,7 @@ class TabViewerEdax(ttk.Frame):
         lf_files = ttk.LabelFrame(left_panel, text="1. Files & Scan", padding=10)
         lf_files.pack(fill=tk.X, pady=(0, 10))
 
-        self.btn_load_h5 = ttk.Button(lf_files, text="Load .edaxh5 File", command=self.load_h5)
+        self.btn_load_h5 = ttk.Button(lf_files, text="Load .h5oina File", command=self.load_h5oina)
         self.btn_load_h5.pack(fill=tk.X, pady=(0, 5))
 
         ttk.Label(lf_files, text="Select map from H5:").pack(anchor=tk.W, pady=(5, 2))
@@ -59,10 +69,11 @@ class TabViewerEdax(ttk.Frame):
         self.combo_scan.pack(fill=tk.X, pady=(0, 10))
         self.combo_scan.bind("<<ComboboxSelected>>", self.on_scan_select)
 
-        self.btn_load_up1 = ttk.Button(lf_files, text="Load .up1 File", command=self.load_up1)
-        self.btn_load_up1.pack(fill=tk.X, pady=(0, 5))
-        self.lbl_up1_file = ttk.Label(lf_files, text="No UP1 loaded.", foreground="gray", wraplength=340)
-        self.lbl_up1_file.pack(fill=tk.X)
+        ttk.Label(lf_files, text="Select Patterns:").pack(anchor=tk.W, pady=(5, 2))
+        self.var_pat_type = tk.StringVar(value="Processed Patterns")
+        self.combo_pat_type = ttk.Combobox(lf_files, textvariable=self.var_pat_type, state="readonly")
+        self.combo_pat_type.pack(fill=tk.X, pady=(0, 5))
+        self.combo_pat_type.bind("<<ComboboxSelected>>", lambda e: self.update_pattern_image())
 
         lf_params = ttk.LabelFrame(left_panel, text="2. Grid & Architecture", padding=10)
         lf_params.pack(fill=tk.X, pady=(0, 10))
@@ -91,7 +102,7 @@ class TabViewerEdax(ttk.Frame):
         lf_nav.pack(fill=tk.X, pady=(0, 10))
         
         ttk.Label(lf_nav, text="Map Field:").pack(anchor=tk.W)
-        self.var_map_field = tk.StringVar(value="Mean Intensity (Calculated)")
+        self.var_map_field = tk.StringVar(value="Band Contrast")
         self.combo_map_field = ttk.Combobox(lf_nav, textvariable=self.var_map_field, state="readonly")
         self.combo_map_field.pack(fill=tk.X, pady=(0, 10))
         self.combo_map_field.bind("<<ComboboxSelected>>", lambda e: self.recalc_map())
@@ -142,50 +153,78 @@ class TabViewerEdax(ttk.Frame):
         self.pat_canvas_img_item = None
         self.pat_canvas.bind("<Configure>", self.on_pat_canvas_resize)
 
-    def load_h5(self):
-        filepath = filedialog.askopenfilename(filetypes=[("EDAX HDF5", "*.edaxh5 *.h5")])
+    def load_h5oina(self):
+        filepath = filedialog.askopenfilename(filetypes=[("Oxford H5OINA", "*.h5oina *.h5")])
         if not filepath: return
         self.state.h5_path = filepath
         self.scans_cache.clear()
         
+        if self.h5_file is not None:
+            self.h5_file.close()
+            self.h5_file = None
+        
         try:
-            with h5py.File(filepath, 'r') as f:
-                def visit_func(name, obj):
-                    if isinstance(obj, h5py.Group) and "Sample/Number Of Columns" in obj:
-                        nx = int(utils.get_h5_scalar(obj["Sample/Number Of Columns"]))
-                        ny = int(utils.get_h5_scalar(obj["Sample/Number Of Rows"]))
-                        step = float(utils.get_h5_scalar(obj.get("Sample/Step X", 1.0)))
+            self.h5_file = h5py.File(filepath, 'r', swmr=True, libver='latest')
+            
+            for key in self.h5_file.keys():
+                if isinstance(self.h5_file[key], h5py.Group) and "EBSD" in self.h5_file[key]:
+                    ebsd_grp = self.h5_file[key]["EBSD"]
+                    if "Header" in ebsd_grp and "Data" in ebsd_grp:
+                        header = ebsd_grp["Header"]
+                        data = ebsd_grp["Data"]
                         
-                        kv = 30.0
-                        if "Electron Beam/SEMkV" in obj:
-                            kv = float(utils.get_h5_scalar(obj["Electron Beam/SEMkV"]))
-                            
-                        pcx, pcy, pcz = 0.5, 0.5, 0.5
-                        try:
-                            pc_group = obj["EBSD/ANG/HEADER/Pattern Center Calibration"]
-                            pcx = float(utils.get_h5_scalar(pc_group["X-Star"]))
-                            pcy = float(utils.get_h5_scalar(pc_group["Y-Star"]))
-                            pcz = float(utils.get_h5_scalar(pc_group["Z-Star"]))
-                        except KeyError:
-                            pass 
+                        nx = int(utils.get_h5_scalar(header["X Cells"]))
+                        ny = int(utils.get_h5_scalar(header["Y Cells"]))
+                        step = float(utils.get_h5_scalar(header["X Step"]))
+                        kv = float(utils.get_h5_scalar(header.get("Beam Voltage", 20.0)))
+                        
+                        pcx = float(np.mean(data["Pattern Center X"][()]))
+                        pcy = float(np.mean(data["Pattern Center Y"][()]))
+                        dd = float(np.mean(data["Detector Distance"][()]))
+                        
+                        map_fields = []
+                        for ds_name in data.keys():
+                            ds = data[ds_name]
+                            if ds.ndim == 1 and ds.shape[0] == nx * ny:
+                                map_fields.append(ds_name)
+                                
+                        pat_types = []
+                        if "Processed Patterns" in data:
+                            pat_types.append("Processed Patterns")
+                            pat_h, pat_w = data["Processed Patterns"].shape[1:3]
+                        if "Unprocessed Patterns" in data:
+                            pat_types.append("Unprocessed Patterns")
+                            if not pat_types:
+                                pat_h, pat_w = data["Unprocessed Patterns"].shape[1:3]
+                                
+                        if not pat_types:
+                            messagebox.showerror("Error", f"No pattern datasets found in {key}/EBSD/Data")
+                            continue
 
-                        if nx > 0 and ny > 0:
-                            map_fields = []
-                            data_len = None
-                            if "EBSD/ANG/DATA/DATA" in obj:
-                                ds = obj["EBSD/ANG/DATA/DATA"]
-                                data_len = ds.shape[0]
-                                if ds.dtype.names:
-                                    for n in ds.dtype.names:
-                                        if n in ["IQ", "CI", "Phase", "SEM Signal"] or "PRIAS" in n:
-                                            map_fields.append(n)
-
-                            self.scans_cache[name] = {
-                                "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, pcz),
-                                "map_fields": map_fields, "data_len": data_len
-                            }
+                        map_name = "Map"
+                        if "Analysis Label" in header:
+                            label_val = header["Analysis Label"][0]
+                            map_name = label_val.decode('utf-8') if isinstance(label_val, bytes) else str(label_val)
+                            map_name = map_name.replace(' ', '_')
                             
-                f.visititems(visit_func)
+                        # Parse Delta from Camera Binning Mode
+                        delta = 23.0
+                        if "Camera Binning Mode" in header:
+                            bmode = header["Camera Binning Mode"][0]
+                            bmode = bmode.decode('utf-8') if isinstance(bmode, bytes) else str(bmode)
+                            bmode = bmode.lower()
+                            if "speed 2" in bmode:
+                                delta = 160.0
+                            elif "speed 1" in bmode or "sensitivity" in bmode:
+                                delta = 40.0
+                            elif "full" in bmode or "resolution" in bmode:
+                                delta = 20.0
+
+                        self.scans_cache[f"{key}/EBSD"] = {
+                            "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, dd),
+                            "map_fields": map_fields, "pat_types": pat_types,
+                            "pat_h": pat_h, "pat_w": pat_w, "map_name": map_name, "delta": delta
+                        }
             
             scans = sorted(list(self.scans_cache.keys()))
             if scans:
@@ -195,7 +234,7 @@ class TabViewerEdax(ttk.Frame):
             else:
                 self.combo_scan['values'] = []
                 self.combo_scan.set('')
-                messagebox.showwarning("No Scans", "Could not find standard OIM Map scans.")
+                messagebox.showwarning("No Scans", "Could not find Oxford EBSD maps.")
                 
         except Exception as e:
             messagebox.showerror("Error", str(e))
@@ -214,63 +253,38 @@ class TabViewerEdax(ttk.Frame):
             self.state.acc_voltage = data["kv"]
             self.state.pc = data["pc"]
             
-            fields = ["Mean Intensity (Calculated)"] + data.get("map_fields", [])
+            self.state.pat_w = data["pat_w"]
+            self.state.pat_h = data["pat_h"]
+            self.lbl_pat_dims.config(text=f"Pattern Dims: {self.state.pat_w} x {self.state.pat_h}")
+            if "delta" in data:
+                self.state.native_delta = data["delta"]
+            if "map_name" in data:
+                self.state.map_name = data["map_name"]
+            
+            self.combo_pat_type['values'] = data["pat_types"]
+            if "Processed Patterns" in data["pat_types"]:
+                self.combo_pat_type.set("Processed Patterns")
+            else:
+                self.combo_pat_type.current(0)
+            
+            fields = sorted(data.get("map_fields", []))
             self.combo_map_field['values'] = fields
-            if self.var_map_field.get() not in fields:
+            if "Band Contrast" in fields:
+                self.combo_map_field.set("Band Contrast")
+            elif fields:
                 self.combo_map_field.current(0)
             
-            self.app.tab_nml_edax.update_h5_data()
-
-    def load_up1(self):
-        start_dir = os.path.dirname(self.state.h5_path) if self.state.h5_path else os.getcwd()
-        filepath = filedialog.askopenfilename(initialdir=start_dir, filetypes=[("EDAX Patterns", "*.up1")])
-        if not filepath: return
-            
-        self.state.up1_path = filepath
-        self.lbl_up1_file.config(text=os.path.basename(filepath))
-        
-        try:
-            with open(filepath, 'rb') as f:
-                header_bytes = f.read(16)
-                header = struct.unpack('<4I', header_bytes)
-                self.state.pat_w = header[1]
-                self.state.pat_h = header[2]
-                self.state.byte_start = header[3]
-                self.lbl_pat_dims.config(text=f"Pattern Dims: {self.state.pat_w} x {self.state.pat_h}")
-                
-            if self.state.pat_w > 0 and self.state.pat_h > 0 and self.scans_cache:
-                total_bytes = os.path.getsize(filepath)
-                total_pats = (total_bytes - self.state.byte_start) // (self.state.pat_w * self.state.pat_h)
-                
-                for scan_name, dims in self.scans_cache.items():
-                    h5_pats = dims.get("data_len")
-                    if h5_pats is None:
-                        h5_pats = dims["nx"] * dims["ny"]
-                    if h5_pats == total_pats:
-                        self.combo_scan.set(scan_name)
-                        self.on_scan_select(None)
-                        break
-
-            self.app.tab_nml_edax.update_h5_data()
-
-        except Exception as e:
-            messagebox.showerror("Header Error", f"Could not read UP1 header:\n{e}")
+            if hasattr(self.app, 'tab_nml_oxford'):
+                self.app.tab_nml_oxford.update_h5_data()
 
     def init_viewer(self):
-        if not self.state.up1_path or self.state.pat_w == 0:
-            messagebox.showerror("Error", "Please load a valid .up1 file first.")
+        if not self.state.h5_path or self.h5_file is None:
+            messagebox.showerror("Error", "Please load a valid .h5oina file first.")
             return
 
         nx, ny = self.state.nx, self.state.ny
-        expected_bytes = nx * ny * self.state.pat_w * self.state.pat_h
-        actual_size = os.path.getsize(self.state.up1_path)
         
-        if (actual_size - self.state.byte_start) != expected_bytes:
-            resp = messagebox.askyesno("Size Warning", "File size mismatch. Map may look distorted.\nProceed?")
-            if not resp: return
-
         try:
-            self.mmap = np.memmap(self.state.up1_path, dtype='uint8', mode='r', offset=self.state.byte_start, shape=(nx * ny, self.state.pat_w * self.state.pat_h))
             self.scale_x.config(to=max(1, nx-1))
             self.scale_y.config(to=max(1, ny-1))
             self.var_x.set(0); self.var_y.set(0)
@@ -281,21 +295,16 @@ class TabViewerEdax(ttk.Frame):
             messagebox.showerror("Init Error", str(e))
 
     def recalc_map(self):
-        if not self.state.nx or not self.state.ny: return
+        if not self.state.nx or not self.state.ny or self.h5_file is None: return
         field = self.var_map_field.get()
-        if field == "Mean Intensity (Calculated)":
-            if self.mmap is None: return
-            step = max(1, (self.state.pat_w * self.state.pat_h) // 100)
-            data_1d = np.mean(self.mmap[:, ::step], axis=1)
-        else:
-            if not self.state.h5_path: return
-            try:
-                with h5py.File(self.state.h5_path, 'r') as f:
-                    ds = f[self.state.scan_name]["EBSD/ANG/DATA/DATA"]
-                    data_1d = ds[field][:]
-            except Exception as e:
-                print(f"Failed to read H5 map data: {e}")
-                return
+        if not field: return
+        
+        try:
+            ds = self.h5_file[self.state.scan_name]["Data"][field]
+            data_1d = ds[:]
+        except Exception as e:
+            print(f"Failed to read H5 map data: {e}")
+            return
 
         expected_len = self.state.nx * self.state.ny
         if len(data_1d) != expected_len:
@@ -310,8 +319,7 @@ class TabViewerEdax(ttk.Frame):
         norm_map = ((self.map_data_2d - map_min) / (map_max - map_min) * 255).astype(np.uint8) if map_max > map_min else self.map_data_2d.astype(np.uint8)
         self.draw_map_image(Image.fromarray(norm_map, mode='L'))
         
-        if self.mmap is not None:
-            self.update_pattern_image() 
+        self.update_pattern_image() 
         self.draw_roi_from_state()
 
     def draw_map_image(self, img_pil):
@@ -328,10 +336,10 @@ class TabViewerEdax(ttk.Frame):
             self.map_canvas.itemconfig(self.map_canvas_img_item, image=self.tk_img_map)
 
     def refresh_view(self):
-        if self.mmap is not None: self.update_pattern_image()
+        self.update_pattern_image()
 
     def on_slide(self, event=None):
-        if self.mmap is not None: self.update_pattern_image()
+        self.update_pattern_image()
 
     def on_map_click(self, event):
         if self.map_data_2d is not None: self.update_xy_from_click(event.x, event.y)
@@ -343,8 +351,7 @@ class TabViewerEdax(ttk.Frame):
         grid_x = max(0, min(self.state.nx - 1, int(cx / self.map_scale_x)))
         grid_y = max(0, min(self.state.ny - 1, int(cy / self.map_scale_y)))
         self.var_x.set(grid_x); self.var_y.set(grid_y)
-        if self.mmap is not None:
-            self.update_pattern_image()
+        self.update_pattern_image()
 
     def draw_roi_from_state(self):
         if not hasattr(self, 'map_scale_x'): return
@@ -394,13 +401,15 @@ class TabViewerEdax(ttk.Frame):
         if gw > 0 and gh > 0:
             self.state.roi = (gx0, gy0, gw, gh)
             self.state.use_roi = True
-            self.app.tab_nml_edax.update_roi_ui()
+            if hasattr(self.app, 'tab_nml_oxford'):
+                self.app.tab_nml_oxford.update_roi_ui()
             self.lbl_pos.config(text=f"ROI Mapped: X0={gx0}, Y0={gy0}, W={gw}, H={gh}")
         else:
             self.map_canvas.delete(self.roi_canvas_item)
             self.roi_canvas_item = None
             self.state.use_roi = False
-            self.app.tab_nml_edax.update_roi_ui()
+            if hasattr(self.app, 'tab_nml_oxford'):
+                self.app.tab_nml_oxford.update_roi_ui()
 
     def get_1d_index(self, x, y):
         if self.var_map_row_major.get():
@@ -409,7 +418,7 @@ class TabViewerEdax(ttk.Frame):
             return (x * self.state.ny) + y
 
     def update_pattern_image(self):
-        if self.mmap is None: return
+        if self.h5_file is None: return
         x, y = int(round(self.var_x.get())), int(round(self.var_y.get()))
         idx = self.get_1d_index(x, y)
         current_lbl = self.lbl_pos.cget("text")
@@ -423,15 +432,33 @@ class TabViewerEdax(ttk.Frame):
         else:
             self.map_canvas.coords(self.map_cursor_item, rect_x1, rect_y1, rect_x2, rect_y2)
 
-        raw_1d = self.mmap[idx]
-        pat_2d = raw_1d.reshape((self.state.pat_h, self.state.pat_w), order='C' if self.var_pat_row_major.get() else 'F')
+        pat_type = self.var_pat_type.get()
+        if not pat_type: return
+        
+        try:
+            ds = self.h5_file[self.state.scan_name]["Data"][pat_type]
+            if idx >= ds.shape[0]: return
+            raw_2d = ds[idx]
+        except Exception as e:
+            print(f"Failed to load pattern: {e}")
+            return
             
+        if not self.var_pat_row_major.get():
+            raw_2d = raw_2d.T
+            
+        if raw_2d.dtype != np.uint8:
+            rmin, rmax = raw_2d.min(), raw_2d.max()
+            if rmax > rmin:
+                raw_2d = ((raw_2d - rmin) / (rmax - rmin) * 255).astype(np.uint8)
+            else:
+                raw_2d = raw_2d.astype(np.uint8)
+
         cmap = self.var_cmap.get()
         if cmap in ["Plasma", "Magma", "Rainbow"] and MATPLOTLIB_AVAILABLE:
-            colored = getattr(cm, cmap.lower())(pat_2d / 255.0)
+            colored = getattr(cm, cmap.lower())(raw_2d / 255.0)
             self.current_raw_image = Image.fromarray((colored[:, :, :3] * 255).astype(np.uint8), mode='RGB')
         else:
-            self.current_raw_image = Image.fromarray(pat_2d, mode='L')
+            self.current_raw_image = Image.fromarray(raw_2d, mode='L')
         self.draw_pat_canvas()
 
     def draw_pat_canvas(self):
@@ -446,4 +473,5 @@ class TabViewerEdax(ttk.Frame):
             self.pat_canvas.coords(self.pat_canvas_img_item, cx, cy)
 
     def on_pat_canvas_resize(self, event):
-        if self.mmap is not None: self.draw_pat_canvas()
+        self.draw_pat_canvas()
+

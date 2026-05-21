@@ -27,6 +27,53 @@ def get_available_memory():
         return stat.ullAvailPhys
     return 8 * 1024 * 1024 * 1024
 
+import tkinter as tk
+from tkinter import ttk
+
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        
+        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        
+        self.scrollable_frame = ttk.Frame(self.canvas)
+        
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+        
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        self.canvas.bind("<Enter>", self._bound_to_mousewheel)
+        self.canvas.bind("<Leave>", self._unbound_to_mousewheel)
+        self.scrollable_frame.bind("<Enter>", self._bound_to_mousewheel)
+        self.scrollable_frame.bind("<Leave>", self._unbound_to_mousewheel)
+
+    def _on_canvas_configure(self, event):
+        if self.scrollable_frame.winfo_reqwidth() < event.width:
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
+            
+    def _bound_to_mousewheel(self, event):
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        
+    def _unbound_to_mousewheel(self, event):
+        self.canvas.unbind_all("<MouseWheel>")
+        
+    def _on_mousewheel(self, event):
+        if event.delta:
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "app_config.json")

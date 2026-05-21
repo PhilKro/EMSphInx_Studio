@@ -19,8 +19,11 @@ class TabNMLBuilderEdax(ttk.Frame):
     def _setup_ui(self):
         ttk.Label(self, text="EDAX: EMsoft NML Generator", font=("Helvetica", 14, "bold")).pack(pady=(20, 10))
         
-        content = ttk.Frame(self)
-        content.pack(fill=tk.BOTH, expand=True, padx=40)
+        scroll = utils.ScrollableFrame(self)
+        scroll.pack(fill=tk.BOTH, expand=True)
+        
+        content = ttk.Frame(scroll.scrollable_frame)
+        content.pack(fill=tk.BOTH, expand=True, padx=40, pady=(0, 20))
 
         dir_frame = ttk.Frame(content)
         dir_frame.pack(fill=tk.X, pady=(0, 10))

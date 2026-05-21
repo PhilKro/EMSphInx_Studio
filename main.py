@@ -8,7 +8,8 @@ os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 import utils
 from tab_viewer_edax import TabViewerEdax
 from tab_nml_edax import TabNMLBuilderEdax
-from tab_oxford import TabViewerOxford, TabNMLOxford
+from tab_viewer_oxford import TabViewerOxford
+from tab_nml_oxford import TabNMLOxford
 from tab_queue import TabQueue
 from help_dialog import HelpDialog
 
