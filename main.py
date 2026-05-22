@@ -52,6 +52,10 @@ class EMSphInxGUI:
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="EMSphInx Studio Help", command=self.show_help)
 
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        settings_menu.add_command(label="WSL Configuration & Mounts", command=self.configure_wsl)
+
         header = ttk.Frame(self.root, padding=10)
         header.pack(fill=tk.X)
         
@@ -127,6 +131,81 @@ class EMSphInxGUI:
 
     def show_help(self):
         HelpDialog(self.root)
+
+    def configure_wsl(self):
+        top = tk.Toplevel(self.root)
+        top.title("WSL Configuration & Mounts")
+        top.geometry("600x450")
+        top.transient(self.root)
+        top.grab_set()
+
+        cfg_frame = ttk.LabelFrame(top, text="WSL Settings", padding=10)
+        cfg_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+        
+        ttk.Label(cfg_frame, text="WSL Distro:").pack(side=tk.LEFT, padx=5)
+        var_distro = tk.StringVar(value=self.config.get("wsl_distro", "Debian"))
+        ttk.Entry(cfg_frame, textvariable=var_distro, width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(cfg_frame, text="EMSphInx Executable Dir (WSL Path):").pack(side=tk.LEFT, padx=(15, 5))
+        var_wsl_dir = tk.StringVar(value=self.config.get("wsl_executable_dir", ""))
+        ttk.Entry(cfg_frame, textvariable=var_wsl_dir, width=30).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(top, text="Map WSL Mount Points to Windows Network Shares", font=("Helvetica", 10, "bold")).pack(pady=10)
+        
+        cols = ("wsl", "win")
+        tree = ttk.Treeview(top, columns=cols, show="headings", height=5)
+        tree.heading("wsl", text="WSL Mount Point (e.g. /mnt/n)")
+        tree.heading("win", text="Windows Share (e.g. \\\\server\\share)")
+        tree.column("wsl", width=200)
+        tree.column("win", width=350)
+        tree.pack(fill=tk.BOTH, expand=True, padx=10)
+        
+        mounts = self.config.get("wsl_network_mounts", {})
+        for wsl, win in mounts.items():
+            tree.insert("", tk.END, values=(wsl, win))
+            
+        ctrl = ttk.Frame(top)
+        ctrl.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(ctrl, text="WSL:").pack(side=tk.LEFT)
+        var_wsl = tk.StringVar()
+        ttk.Entry(ctrl, textvariable=var_wsl, width=15).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(ctrl, text="Win:").pack(side=tk.LEFT)
+        var_win = tk.StringVar()
+        ttk.Entry(ctrl, textvariable=var_win, width=30).pack(side=tk.LEFT, padx=5)
+        
+        def add_mount():
+            w = var_wsl.get().strip()
+            v = var_win.get().strip()
+            if w and v:
+                tree.insert("", tk.END, values=(w, v))
+                var_wsl.set("")
+                var_win.set("")
+        
+        ttk.Button(ctrl, text="Add", command=add_mount).pack(side=tk.LEFT, padx=5)
+        
+        def remove_mount():
+            sel = tree.selection()
+            for s in sel:
+                tree.delete(s)
+                
+        ttk.Button(ctrl, text="Remove Selected", command=remove_mount).pack(side=tk.LEFT, padx=5)
+        
+        def save():
+            new_mounts = {}
+            for item in tree.get_children():
+                w, v = tree.item(item, "values")
+                new_mounts[w] = v
+            self.config["wsl_distro"] = var_distro.get()
+            self.config["wsl_executable_dir"] = var_wsl_dir.get()
+            self.config["wsl_network_mounts"] = new_mounts
+            utils.save_json(utils.CONFIG_FILE, self.config)
+            top.destroy()
+            
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Save & Close", command=save).pack()
 
 if __name__ == "__main__":
     root = tk.Tk()

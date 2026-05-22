@@ -17,21 +17,6 @@ class TabQueue(ttk.Frame):
         self._setup_ui()
 
     def _setup_ui(self):
-        cfg_frame = ttk.LabelFrame(self, text="WSL Settings", padding=10)
-        cfg_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
-        
-        ttk.Label(cfg_frame, text="WSL Distro:").pack(side=tk.LEFT, padx=5)
-        self.var_distro = tk.StringVar(value=self.app.config.get("wsl_distro", "Debian"))
-        self.var_distro.trace_add("write", self.save_wsl_config)
-        ttk.Entry(cfg_frame, textvariable=self.var_distro, width=15).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(cfg_frame, text="EMSphInx Executable Dir (WSL Path):").pack(side=tk.LEFT, padx=(15, 5))
-        self.var_wsl_dir = tk.StringVar(value=self.app.config.get("wsl_executable_dir", ""))
-        self.var_wsl_dir.trace_add("write", self.save_wsl_config)
-        ttk.Entry(cfg_frame, textvariable=self.var_wsl_dir, width=40).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Button(cfg_frame, text="Configure Network Mounts", command=self.configure_mounts).pack(side=tk.RIGHT, padx=5)
-
         table_frame = ttk.LabelFrame(self, text="Indexing Queue", padding=10)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
@@ -69,127 +54,66 @@ class TabQueue(ttk.Frame):
         self.txt_console = tk.Text(console_frame, bg="black", fg="lime green", height=10, state=tk.DISABLED)
         self.txt_console.pack(fill=tk.BOTH, expand=True)
 
-    def save_wsl_config(self, *args):
-        self.app.config["wsl_distro"] = self.var_distro.get()
-        self.app.config["wsl_executable_dir"] = self.var_wsl_dir.get()
-        utils.save_json(utils.CONFIG_FILE, self.app.config)
-
-    def configure_mounts(self):
-        top = tk.Toplevel(self.app.root)
-        top.title("Network Mounts")
-        top.geometry("600x300")
-        top.transient(self.app.root)
-        top.grab_set()
-        
-        ttk.Label(top, text="Map WSL Mount Points to Windows Network Shares", font=("Helvetica", 10, "bold")).pack(pady=10)
-        
-        cols = ("wsl", "win")
-        tree = ttk.Treeview(top, columns=cols, show="headings", height=5)
-        tree.heading("wsl", text="WSL Mount Point (e.g. /mnt/n)")
-        tree.heading("win", text="Windows Share (e.g. \\\\server\\share)")
-        tree.column("wsl", width=200)
-        tree.column("win", width=350)
-        tree.pack(fill=tk.BOTH, expand=True, padx=10)
-        
-        mounts = self.app.config.get("wsl_network_mounts", {})
-        for wsl, win in mounts.items():
-            tree.insert("", tk.END, values=(wsl, win))
-            
-        ctrl = ttk.Frame(top)
-        ctrl.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(ctrl, text="WSL:").pack(side=tk.LEFT)
-        var_wsl = tk.StringVar()
-        ttk.Entry(ctrl, textvariable=var_wsl, width=15).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(ctrl, text="Win:").pack(side=tk.LEFT)
-        var_win = tk.StringVar()
-        ttk.Entry(ctrl, textvariable=var_win, width=30).pack(side=tk.LEFT, padx=5)
-        
-        def add_mount():
-            w = var_wsl.get().strip()
-            v = var_win.get().strip()
-            if w and v:
-                tree.insert("", tk.END, values=(w, v))
-                var_wsl.set("")
-                var_win.set("")
-        
-        ttk.Button(ctrl, text="Add", command=add_mount).pack(side=tk.LEFT, padx=5)
-        
-        def remove_mount():
-            sel = tree.selection()
-            for s in sel:
-                tree.delete(s)
-                
-        ttk.Button(ctrl, text="Remove Selected", command=remove_mount).pack(side=tk.LEFT, padx=5)
-        
-        def save():
-            new_mounts = {}
-            for item in tree.get_children():
-                w, v = tree.item(item, "values")
-                new_mounts[w] = v
-            self.app.config["wsl_network_mounts"] = new_mounts
-            utils.save_json(utils.CONFIG_FILE, self.app.config)
-            top.destroy()
-            
-        btn_frame = ttk.Frame(top)
-        btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Save & Close", command=save).pack()
-
     def add_job(self, scan_target, nml_path, status="Pending"):
         item_id = self.tree.insert("", tk.END, values=(status, scan_target, nml_path))
         self.update_global_progress_label()
         return item_id
 
     def load_existing_nml(self):
-        filepath = filedialog.askopenfilename(filetypes=[("EMSphInx NML", "*.nml")])
-        if not filepath:
+        filepaths = filedialog.askopenfilenames(filetypes=[("EMSphInx NML", "*.nml")])
+        if not filepaths:
             return
             
-        try:
-            with open(filepath, 'r') as f:
-                content = f.read()
+        success_count = 0
+        for filepath in filepaths:
+            try:
+                with open(filepath, 'r') as f:
+                    content = f.read()
+                    
+                mappings = self.app.config.get("wsl_drive_mappings", {})
+                net_mounts = self.app.config.get("wsl_network_mounts", {})
                 
-            mappings = self.app.config.get("wsl_drive_mappings", {})
-            
-            pat_match = re.search(r"patfile\s*=\s*'([^']+)'", content)
-            master_match = re.search(r"masterfile\s*=\s*(.+?)(?:\n|!|$)", content)
-            
-            missing = []
-            
-            if pat_match:
-                wsl_pat = pat_match.group(1)
-                win_pat = utils.to_windows_path(wsl_pat, mappings)
-                if not os.path.exists(win_pat):
-                    missing.append(win_pat)
-            else:
-                messagebox.showerror("Error", "Could not find 'patfile' inside the NML.")
-                return
+                pat_match = re.search(r"patfile\s*=\s*'([^']+)'", content)
+                master_match = re.search(r"masterfile\s*=\s*(.+?)(?:\n|!|$)", content)
                 
-            if master_match:
-                master_raw = master_match.group(1)
-                wsl_masters = re.findall(r"'([^']+)'", master_raw)
-                for w_m in wsl_masters:
-                    win_m = utils.to_windows_path(w_m, mappings)
-                    if not os.path.exists(win_m):
-                        sht_lib_dir = os.path.join(utils.SCRIPT_DIR, self.app.config.get("sht_library_dir", "SHT_Library"))
-                        fallback_path = os.path.join(sht_lib_dir, os.path.basename(w_m))
-                        if not os.path.exists(fallback_path):
-                            missing.append(win_m)
-            else:
-                messagebox.showerror("Error", "Could not find 'masterfile' inside the NML.")
-                return
+                missing = []
                 
-            if missing:
-                msg = "Cannot queue this job. The following files mapped in the NML do not exist on your local Windows drive:\n\n" + "\n".join(missing)
-                messagebox.showerror("Missing Files", msg)
-                return
+                if pat_match:
+                    wsl_pat = pat_match.group(1)
+                    win_pat = utils.to_windows_path(wsl_pat, mappings, net_mounts)
+                    if not os.path.exists(win_pat):
+                        missing.append(win_pat)
+                else:
+                    messagebox.showerror("Error", f"Could not find 'patfile' inside {os.path.basename(filepath)}.")
+                    continue
+                    
+                if master_match:
+                    master_raw = master_match.group(1)
+                    wsl_masters = re.findall(r"'([^']+)'", master_raw)
+                    for w_m in wsl_masters:
+                        win_m = utils.to_windows_path(w_m, mappings, net_mounts)
+                        if not os.path.exists(win_m):
+                            sht_lib_dir = os.path.join(utils.SCRIPT_DIR, self.app.config.get("sht_library_dir", "SHT_Library"))
+                            fallback_path = os.path.join(sht_lib_dir, os.path.basename(w_m))
+                            if not os.path.exists(fallback_path):
+                                missing.append(win_m)
+                else:
+                    messagebox.showerror("Error", f"Could not find 'masterfile' inside {os.path.basename(filepath)}.")
+                    continue
+                    
+                if missing:
+                    msg = f"Cannot queue {os.path.basename(filepath)}. The following mapped files do not exist:\n\n" + "\n".join(missing)
+                    messagebox.showerror("Missing Files", msg)
+                    continue
+                    
+                self.add_job(f"Loaded: {os.path.basename(filepath)}", filepath)
+                success_count += 1
                 
-            self.add_job(f"Loaded: {os.path.basename(filepath)}", filepath)
-            messagebox.showinfo("Success", "Existing NML loaded and added to Queue.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load NML:\n{e}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load NML {os.path.basename(filepath)}:\n{e}")
+                
+        if success_count > 0:
+            messagebox.showinfo("Success", f"{success_count} existing NML(s) loaded and added to Queue.")
 
     def update_global_progress_label(self):
         all_items = self.tree.get_children()
@@ -315,7 +239,7 @@ class TabQueue(ttk.Frame):
             nml_path = self.tree.item(item, "values")[2]
             distro = self.app.config.get("wsl_distro", "Debian")
             wsl_exe_dir = self.app.config.get("wsl_executable_dir", "")
-            wsl_nml_path = utils.to_wsl_path(nml_path, self.app.config.get("wsl_drive_mappings", {}))
+            wsl_nml_path = utils.to_wsl_path(nml_path, self.app.config.get("wsl_drive_mappings", {}), self.app.config.get("wsl_network_mounts", {}))
             
             if not self.check_and_mount_network_drives():
                 self.app.root.after(0, self.safe_tree_update, item, "status", "Failed (Mount Error)")

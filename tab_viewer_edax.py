@@ -63,6 +63,14 @@ class TabViewerEdax(ttk.Frame):
         self.btn_load_up1.pack(fill=tk.X, pady=(0, 5))
         self.lbl_up1_file = ttk.Label(lf_files, text="No UP1 loaded.", foreground="gray", wraplength=340)
         self.lbl_up1_file.pack(fill=tk.X)
+        
+        self.var_pat_row_major = tk.BooleanVar(value=True)
+        ttk.Checkbutton(lf_files, text="Pattern Pixel Read: Row-Major", variable=self.var_pat_row_major, command=self.refresh_view).pack(anchor=tk.W, pady=(10, 0))
+        self.var_map_row_major = tk.BooleanVar(value=True)
+        ttk.Checkbutton(lf_files, text="Map Grid Read: Row-Major", variable=self.var_map_row_major, command=self.recalc_map).pack(anchor=tk.W)
+
+        self.btn_init = ttk.Button(lf_files, text="Initialize Interactive Map", command=self.init_viewer)
+        self.btn_init.pack(fill=tk.X, pady=(15, 0))
 
         lf_params = ttk.LabelFrame(left_panel, text="2. Grid & Architecture", padding=10)
         lf_params.pack(fill=tk.X, pady=(0, 10))
@@ -78,14 +86,6 @@ class TabViewerEdax(ttk.Frame):
 
         self.lbl_pat_dims = ttk.Label(lf_params, text="Pattern Dims: Unknown", foreground="blue")
         self.lbl_pat_dims.pack(anchor=tk.W, pady=(10, 0))
-
-        self.var_pat_row_major = tk.BooleanVar(value=True)
-        ttk.Checkbutton(lf_params, text="Pattern Pixel Read: Row-Major", variable=self.var_pat_row_major, command=self.refresh_view).pack(anchor=tk.W)
-        self.var_map_row_major = tk.BooleanVar(value=True)
-        ttk.Checkbutton(lf_params, text="Map Grid Read: Row-Major", variable=self.var_map_row_major, command=self.recalc_map).pack(anchor=tk.W)
-
-        self.btn_init = ttk.Button(lf_params, text="Initialize Interactive Map", command=self.init_viewer)
-        self.btn_init.pack(fill=tk.X, pady=(15, 0))
 
         lf_nav = ttk.LabelFrame(left_panel, text="3. Display Settings", padding=10)
         lf_nav.pack(fill=tk.X, pady=(0, 10))

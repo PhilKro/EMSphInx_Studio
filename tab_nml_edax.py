@@ -95,25 +95,30 @@ class TabNMLBuilderEdax(ttk.Frame):
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
         ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=2, column=2, sticky=tk.W, padx=10)
 
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        self.var_circmask = tk.StringVar(value="0 (Enabled)")
+        self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
+        self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
+
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("gausbckg", True))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("nregions", 4)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=4, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
         
         hint_nregions = "(10 is a decent value. Adjust based on relative size of Kikuchi bands to pattern size, this depends on detector distance)"
-        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=4, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=5, column=2, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=5, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
         
         max_cpu = os.cpu_count() or "Unknown"
-        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=5, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=6, column=2, sticky=tk.W, padx=10)
 
         # 3. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
@@ -398,11 +403,12 @@ class TabNMLBuilderEdax(ttk.Frame):
         DD_emsoft  = self.state.pat_w * pcz * delta
 
         wsl_maps = self.app.config.get("wsl_drive_mappings", {})
-        write_up1 = utils.to_wsl_path(self.state.up1_path, wsl_maps)
+        net_mounts = self.app.config.get("wsl_network_mounts", {})
+        write_up1 = utils.to_wsl_path(self.state.up1_path, wsl_maps, net_mounts)
         
-        wsl_master_paths = [utils.to_wsl_path(p, wsl_maps) for p in sht_paths]
+        wsl_master_paths = [utils.to_wsl_path(p, wsl_maps, net_mounts) for p in sht_paths]
         masterfile_str = ",".join(f"'{p}'" for p in wsl_master_paths) + ","
-        write_out = utils.to_wsl_path(out_nml, wsl_maps)
+        write_out = utils.to_wsl_path(out_nml, wsl_maps, net_mounts)
 
         try:
             with open(out_nml, "w", newline='\n') as f:
@@ -416,7 +422,10 @@ class TabNMLBuilderEdax(ttk.Frame):
                 f.write("! Pattern Processing\n")
                 f.write("!#################################################################\n")
                 f.write(f" patdims    = {self.state.pat_w}, {self.state.pat_h},\n")
-                f.write(" circmask   = 0,\n")
+                
+                circmask_val = self.var_circmask.get().split()[0]
+                f.write(f" circmask   = {circmask_val},\n")
+                
                 gaus_str = ".TRUE." if gausbckg else ".FALSE."
                 f.write(f" gausbckg   = {gaus_str},\n")
                 f.write(f" nregions   = {nregions},\n\n")

@@ -115,8 +115,19 @@ def save_json(filepath, data):
     except Exception as e:
         print(f"Error saving {filepath}: {e}")
 
-def to_wsl_path(win_path, wsl_mappings):
+def to_wsl_path(win_path, wsl_mappings, network_mounts=None):
     if not win_path: return win_path
+    if network_mounts is None:
+        network_mounts = {}
+        
+    win_path_fwd = win_path.replace('\\', '/')
+    
+    for mnt_point, unc_path in network_mounts.items():
+        unc_fwd = unc_path.replace('\\', '/')
+        if win_path_fwd.lower().startswith(unc_fwd.lower()):
+            tail = win_path_fwd[len(unc_fwd):].lstrip('/')
+            return f"{mnt_point}/{tail}"
+
     drive, tail = os.path.splitdrive(win_path)
     if not drive: return win_path.replace('\\', '/')
     drive_upper = drive.upper()
@@ -133,8 +144,17 @@ def to_wsl_path(win_path, wsl_mappings):
     tail = tail.replace('\\', '/').lstrip('/')
     return f"{mnt_path}/{tail}"
 
-def to_windows_path(wsl_path, wsl_mappings):
+def to_windows_path(wsl_path, wsl_mappings, network_mounts=None):
     """Reverses WSL path back to Windows to check if files exist locally."""
+    if network_mounts is None:
+        network_mounts = {}
+        
+    for mnt_point, unc_path in network_mounts.items():
+        if wsl_path.startswith(mnt_point):
+            tail = wsl_path[len(mnt_point):].lstrip('/')
+            tail_win = tail.replace('/', os.sep)
+            return f"{unc_path}{os.sep}{tail_win}"
+
     rev_map = {v: k for k, v in wsl_mappings.items()}
 
     for w_prefix in sorted(rev_map.keys(), key=len, reverse=True):
