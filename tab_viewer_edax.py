@@ -319,10 +319,20 @@ class TabViewerEdax(ttk.Frame):
         cw, ch = self.map_canvas.winfo_width(), self.map_canvas.winfo_height()
         if cw < 10: cw, ch = 350, 350
         
-        self.map_scale_x, self.map_scale_y = cw / img_pil.width, ch / img_pil.height
-        self.tk_img_map = ImageTk.PhotoImage(img_pil.resize((cw, ch), Image.Resampling.NEAREST))
+        img_aspect = img_pil.width / img_pil.height
+        canvas_aspect = cw / ch
         
-        if self.map_canvas_img_item is None:
+        if img_aspect > canvas_aspect:
+            new_w = cw
+            new_h = max(1, int(cw / img_aspect))
+        else:
+            new_h = ch
+            new_w = max(1, int(ch * img_aspect))
+            
+        self.map_scale_x, self.map_scale_y = new_w / img_pil.width, new_h / img_pil.height
+        self.tk_img_map = ImageTk.PhotoImage(img_pil.resize((new_w, new_h), Image.Resampling.NEAREST))
+        
+        if getattr(self, 'map_canvas_img_item', None) is None:
             self.map_canvas_img_item = self.map_canvas.create_image(0, 0, image=self.tk_img_map, anchor=tk.NW)
         else:
             self.map_canvas.itemconfig(self.map_canvas_img_item, image=self.tk_img_map)
@@ -349,9 +359,12 @@ class TabViewerEdax(ttk.Frame):
     def draw_roi_from_state(self):
         if not hasattr(self, 'map_scale_x'): return
         if not self.state.use_roi:
-            if self.roi_canvas_item:
+            if getattr(self, 'roi_canvas_item', None):
                 self.map_canvas.delete(self.roi_canvas_item)
                 self.roi_canvas_item = None
+            if getattr(self, 'roi_text_item', None):
+                self.map_canvas.delete(self.roi_text_item)
+                self.roi_text_item = None
             return
             
         x0, y0, w, h = self.state.roi
@@ -363,16 +376,24 @@ class TabViewerEdax(ttk.Frame):
         x1, y1 = x0 * self.map_scale_x, y0 * self.map_scale_y
         x2, y2 = (x0 + w) * self.map_scale_x, (y0 + h) * self.map_scale_y
         
-        if self.roi_canvas_item:
+        if getattr(self, 'roi_canvas_item', None):
             self.map_canvas.coords(self.roi_canvas_item, x1, y1, x2, y2)
         else:
             self.roi_canvas_item = self.map_canvas.create_rectangle(x1, y1, x2, y2, outline='cyan', width=2, dash=(4, 4))
+            
+        text_label = f"({x0},{y0} {w}x{h})"
+        text_y = y1 - 5 if y1 > 15 else y2 + 15
+        if getattr(self, 'roi_text_item', None):
+            self.map_canvas.coords(self.roi_text_item, x1, text_y)
+            self.map_canvas.itemconfig(self.roi_text_item, text=text_label)
+        else:
+            self.roi_text_item = self.map_canvas.create_text(x1, text_y, text=text_label, fill="cyan", anchor=tk.SW, font=("Helvetica", 9, "bold"))
 
     def on_roi_press(self, event):
         if self.map_data_2d is None: return
         self.roi_start_x = event.x
         self.roi_start_y = event.y
-        if self.roi_canvas_item:
+        if getattr(self, 'roi_canvas_item', None):
             self.map_canvas.delete(self.roi_canvas_item)
         self.roi_canvas_item = self.map_canvas.create_rectangle(self.roi_start_x, self.roi_start_y, event.x, event.y, outline='cyan', width=2, dash=(4, 4))
 
@@ -386,21 +407,28 @@ class TabViewerEdax(ttk.Frame):
         x2, y2 = event.x / self.map_scale_x, event.y / self.map_scale_y
         grid_x1, grid_x2 = sorted([x1, x2])
         grid_y1, grid_y2 = sorted([y1, y2])
-        gx0 = max(0, int(grid_x1))
-        gy0 = max(0, int(grid_y1))
-        gw = min(self.state.nx - gx0, int(grid_x2 - grid_x1))
-        gh = min(self.state.ny - gy0, int(grid_y2 - grid_y1))
+        gx0 = max(0, min(self.state.nx - 1, int(grid_x1)))
+        gy0 = max(0, min(self.state.ny - 1, int(grid_y1)))
+        gw = max(1, min(self.state.nx - gx0, int(grid_x2 - grid_x1 + 0.5)))
+        gh = max(1, min(self.state.ny - gy0, int(grid_y2 - grid_y1 + 0.5)))
 
         if gw > 0 and gh > 0:
             self.state.roi = (gx0, gy0, gw, gh)
             self.state.use_roi = True
-            self.app.tab_nml_edax.update_roi_ui()
+            if hasattr(self.app, 'tab_nml_edax'):
+                self.app.tab_nml_edax.update_roi_ui()
             self.lbl_pos.config(text=f"ROI Mapped: X0={gx0}, Y0={gy0}, W={gw}, H={gh}")
+            self.draw_roi_from_state()
         else:
-            self.map_canvas.delete(self.roi_canvas_item)
-            self.roi_canvas_item = None
+            if getattr(self, 'roi_canvas_item', None):
+                self.map_canvas.delete(self.roi_canvas_item)
+                self.roi_canvas_item = None
+            if getattr(self, 'roi_text_item', None):
+                self.map_canvas.delete(self.roi_text_item)
+                self.roi_text_item = None
             self.state.use_roi = False
-            self.app.tab_nml_edax.update_roi_ui()
+            if hasattr(self.app, 'tab_nml_edax'):
+                self.app.tab_nml_edax.update_roi_ui()
 
     def get_1d_index(self, x, y):
         if self.var_map_row_major.get():

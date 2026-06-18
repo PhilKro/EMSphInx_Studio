@@ -7,6 +7,8 @@ import json
 import re
 import shutil
 import utils
+import webbrowser
+import threading
 
 class TabNMLBuilderEdax(ttk.Frame):
     def __init__(self, parent, app):
@@ -41,14 +43,19 @@ class TabNMLBuilderEdax(ttk.Frame):
         
         ttk.Label(sht_frame, text="Structure:").grid(row=0, column=2, sticky=tk.W, pady=5)
         self.var_struct = tk.StringVar(value="[A1]")
-        ttk.Entry(sht_frame, textvariable=self.var_struct, width=8).grid(row=0, column=3, padx=(5, 15))
+        self.combo_struct = ttk.Combobox(sht_frame, textvariable=self.var_struct, width=8)
+        self.combo_struct.grid(row=0, column=3, padx=(5, 5))
+        
+        ttk.Button(sht_frame, text="Load Structures", command=self.load_structures).grid(row=0, column=4, padx=(0, 15))
 
-        ttk.Label(sht_frame, text="kV:").grid(row=0, column=4, sticky=tk.W, pady=5)
+        ttk.Label(sht_frame, text="kV:").grid(row=0, column=5, sticky=tk.W, pady=5)
         self.var_kv = tk.StringVar(value="30")
-        ttk.Entry(sht_frame, textvariable=self.var_kv, width=8).grid(row=0, column=5, padx=(5, 15))
+        ttk.Entry(sht_frame, textvariable=self.var_kv, width=8).grid(row=0, column=6, padx=(5, 15))
 
-        self.btn_fetch_sht = ttk.Button(sht_frame, text="Find/Fetch SHT from GitHub API", command=self.fetch_sht)
-        self.btn_fetch_sht.grid(row=0, column=6, padx=(10, 0))
+        self.btn_fetch_sht = ttk.Button(sht_frame, text="Find/Fetch", command=self.fetch_sht)
+        self.btn_fetch_sht.grid(row=0, column=7, padx=(5, 0))
+        
+        ttk.Button(sht_frame, text="Open SHT Database in Browser", command=lambda: webbrowser.open("https://github.com/EMsoft-org/SHTdatabase/tree/master")).grid(row=0, column=8, padx=(5, 0))
 
         ttk.Label(sht_frame, text="Master Pattern(s):").grid(row=1, column=0, sticky=tk.NW, pady=(10, 5))
         
@@ -68,7 +75,7 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.sht_listbox.config(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
         
         btn_frame_sht = ttk.Frame(sht_frame)
-        btn_frame_sht.grid(row=1, column=6, sticky=tk.NW, pady=(10, 5))
+        btn_frame_sht.grid(row=1, column=7, columnspan=2, sticky=tk.NW, pady=(10, 5))
         ttk.Button(btn_frame_sht, text="Browse", command=self.browse_sht).pack(fill=tk.X, pady=(0, 2))
         ttk.Button(btn_frame_sht, text="Remove", command=self.remove_sht).pack(fill=tk.X)
 
@@ -84,11 +91,11 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.lbl_binning.grid(row=0, column=1, sticky=tk.W, padx=10)
 
         ttk.Label(params_frame, text="Native Delta:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.var_delta = tk.StringVar(value=str(self.app.params.get("native_delta", 23.0)))
+        self.var_delta = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("native_delta", 23.0)))
         ttk.Entry(params_frame, textvariable=self.var_delta, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
 
         ttk.Label(params_frame, text="Bandwidth:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.var_bw = tk.StringVar(value=str(self.app.params.get("bw", 123)))
+        self.var_bw = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
         ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=2, column=1, sticky=tk.W, padx=10)
         
@@ -100,12 +107,12 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
         self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
 
-        self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("gausbckg", True))
+        self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("gausbckg", True))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
         ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
         ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
-        self.var_nregions = tk.StringVar(value=str(self.app.params.get("nregions", 4)))
+        self.var_nregions = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nregions", 10)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
         self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
         
@@ -114,11 +121,17 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.on_gaus_change()
 
         ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
-        self.var_nthread = tk.StringVar(value=str(self.app.params.get("nthread", 0)))
+        self.var_nthread = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nthread", 0)))
         ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+        
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        self.var_batchsize = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("batchsize", 0)))
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
         
         max_cpu = os.cpu_count() or "Unknown"
         ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=6, column=2, sticky=tk.W, padx=10)
+
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=8, column=0, pady=(10, 0), sticky=tk.W)
 
         # 3. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
@@ -247,9 +260,69 @@ class TabNMLBuilderEdax(ttk.Frame):
             bw = self.var_bw.get()
             self.var_nml_name.set(f"{up1_basename}_{scan_leaf}_BW{bw}.nml")
 
+    def reset_defaults(self):
+        try:
+            with open(utils.DEFAULTS_FILE, 'r') as f:
+                defs = json.load(f)
+            edax_defs = defs.get("EDAX", {})
+            self.var_delta.set(str(edax_defs.get("native_delta", 23.0)))
+            self.var_bw.set(str(edax_defs.get("bw", 123)))
+            self.var_gausbckg.set(edax_defs.get("gausbckg", True))
+            self.var_nregions.set(str(edax_defs.get("nregions", 10)))
+            self.var_nthread.set(str(edax_defs.get("nthread", 0)))
+            self.var_batchsize.set(str(edax_defs.get("batchsize", 0)))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load defaults:\n{e}")
+
+    def load_structures(self):
+        element = self.var_element.get().strip()
+        if not element:
+            messagebox.showwarning("Warning", "Please enter an Element.")
+            return
+        self.combo_struct.set("Loading...")
+        self.update_idletasks()
+        
+        def _fetch():
+            try:
+                tree_url = "https://api.github.com/repos/EMsoft-org/SHTdatabase/git/trees/master?recursive=1"
+                req = urllib.request.Request(tree_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as response:
+                    tree_data = json.loads(response.read().decode('utf-8'))
+                structures = set()
+                for item in tree_data.get('tree', []):
+                    path = item['path']
+                    if path.endswith('.sht'):
+                        basename = os.path.basename(path)
+                        parts = basename.split(' ')
+                        if parts[0].lower() == element.lower():
+                            m = re.search(r'\[(.*?)\]', basename)
+                            if m:
+                                structures.add(f"[{m.group(1)}]")
+                
+                def _update():
+                    if structures:
+                        vals = sorted(list(structures))
+                        self.combo_struct['values'] = vals
+                        self.combo_struct.set(vals[0])
+                    else:
+                        self.combo_struct.set("")
+                        self.combo_struct['values'] = []
+                        messagebox.showinfo("Info", f"No structures found for {element}.")
+                self.app.root.after(0, _update)
+            except Exception as e:
+                self.app.root.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch structures:\n{e}"))
+                self.app.root.after(0, lambda: self.combo_struct.set(""))
+                
+        threading.Thread(target=_fetch, daemon=True).start()
+
     def fetch_sht(self):
         element = self.var_element.get().strip().lower()
         struct_type = self.var_struct.get().strip().lower()
+        if struct_type and not struct_type.startswith('['):
+            struct_type = f"[{struct_type}"
+        if struct_type and not struct_type.endswith(']'):
+            struct_type = f"{struct_type}]"
+            
         kv = self.var_kv.get().strip()
         
         if not element or not struct_type or not kv:
@@ -261,15 +334,17 @@ class TabNMLBuilderEdax(ttk.Frame):
         os.makedirs(local_dir, exist_ok=True)
         
         for local_file in os.listdir(local_dir):
-            if local_file.endswith('.sht') and all(t in local_file.lower() for t in tokens):
-                local_path = os.path.join(local_dir, local_file)
-                clean_name = utils.sanitize_sht_filename(local_file)
-                clean_path = os.path.join(local_dir, clean_name)
-                if local_path != clean_path:
-                    os.rename(local_path, clean_path)
-                self._append_sht_path(clean_path)
-                self.lbl_sht_status.config(text=f"Found Locally: {clean_name}", foreground="green")
-                return
+            if local_file.endswith('.sht'):
+                parts = local_file.split(' ')
+                if parts[0].lower() == element and struct_type in local_file.lower() and f"{{{kv}kv}}".lower() in local_file.lower():
+                    local_path = os.path.join(local_dir, local_file)
+                    clean_name = utils.sanitize_sht_filename(local_file)
+                    clean_path = os.path.join(local_dir, clean_name)
+                    if local_path != clean_path:
+                        os.rename(local_path, clean_path)
+                    self._append_sht_path(clean_path)
+                    self.lbl_sht_status.config(text=f"Found Locally: {clean_name}", foreground="green")
+                    return
             
         self.lbl_sht_status.config(text="Searching EMsoft GitHub Repository...", foreground="blue")
         self.update_idletasks()
@@ -285,8 +360,9 @@ class TabNMLBuilderEdax(ttk.Frame):
             for item in tree_data.get('tree', []):
                 path = item['path']
                 if path.endswith('.sht'):
-                    basename = os.path.basename(path).lower()
-                    if all(t in basename for t in tokens):
+                    basename = os.path.basename(path)
+                    parts = basename.split(' ')
+                    if parts[0].lower() == element and struct_type in basename.lower() and f"{{{kv}kv}}".lower() in basename.lower():
                         safe_path = urllib.parse.quote(path)
                         file_url = f"https://raw.githubusercontent.com/EMsoft-org/SHTdatabase/master/{safe_path}"
                         found_name = os.path.basename(path)
@@ -367,14 +443,17 @@ class TabNMLBuilderEdax(ttk.Frame):
             native_delta = float(self.var_delta.get())
             gausbckg = self.var_gausbckg.get()
             nthread = int(self.var_nthread.get())
+            batchsize = int(self.var_batchsize.get())
             
             nregions = int(self.var_nregions.get()) if gausbckg else 0
             
-            self.app.params["bw"] = bw
-            self.app.params["nregions"] = int(self.var_nregions.get()) 
-            self.app.params["native_delta"] = native_delta
-            self.app.params["gausbckg"] = gausbckg
-            self.app.params["nthread"] = nthread
+            if "EDAX" not in self.app.params: self.app.params["EDAX"] = {}
+            self.app.params["EDAX"]["bw"] = bw
+            self.app.params["EDAX"]["nregions"] = int(self.var_nregions.get()) 
+            self.app.params["EDAX"]["native_delta"] = native_delta
+            self.app.params["EDAX"]["gausbckg"] = gausbckg
+            self.app.params["EDAX"]["nthread"] = nthread
+            self.app.params["EDAX"]["batchsize"] = batchsize
             utils.save_json(utils.PARAMS_FILE, self.app.params)
             
             if self.var_use_roi.get():
@@ -448,7 +527,7 @@ class TabNMLBuilderEdax(ttk.Frame):
                 f.write(" normed     = .FALSE.,\n")
                 f.write(" refine     = .TRUE.,\n")
                 f.write(f" nthread    = {nthread},\n")
-                f.write(" batchsize  = 0,\n\n")
+                f.write(f" batchsize  = {batchsize},\n\n")
                 f.write("!#################################################################\n")
                 f.write("! Output Files\n")
                 f.write("!#################################################################\n")

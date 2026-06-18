@@ -1,0 +1,29 @@
+{
+    "wsl_distro": "Debian",
+    "wsl_executable_dir": "/mnt/d/Software/EMSphInx_Debian",
+    "sht_library_dir": "SHT_Library",
+    "wsl_drive_mappings": {
+        "C:": "/mnt/c",
+        "D:": "/mnt/d",
+        "T:": "/mnt/t",
+        "U:": "/mnt/u",
+        "V:": "/mnt/v",
+        "G:": "/mnt/g",
+        "H:": "/mnt/h",
+        "K:": "/mnt/k",
+        "N:": "/mnt/n",
+        "P:": "/mnt/p",
+        "Q:": "/mnt/q",
+        "R:": "/mnt/r"
+    },
+    "wsl_network_mounts": {
+        "/mnt/g": "\\\\empa.emp-eaw.ch\\data\\Abt206",
+        "/mnt/h": "\\\\empa.emp-eaw.ch\\data\\users\\phkr",
+        "/mnt/k": "\\\\empa.emp-eaw.ch\\data\\Projects",
+        "/mnt/n": "\\\\empa.emp-eaw.ch\\Data\\RawData",
+        "/mnt/p": "\\\\empa.emp-eaw.ch\\data\\Progs",
+        "/mnt/q": "\\\\empa.emp-eaw.ch\\data\\daten",
+        "/mnt/r": "\\\\empa.emp-eaw.ch\\data\\Unsaved"
+    },
+    "wsl_sudo_password": ""
+}

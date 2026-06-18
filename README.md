@@ -41,11 +41,17 @@ To run EMSphInx Studio, ensure you have the following installed:
 
 ### 1. Configuration
 When you first launch the application, you must configure the connection to your WSL environment:
-- Open the **Job Queue** tab.
+- Open the **Settings > WSL Configuration & Mounts** menu at the top of the window.
 - Set your **WSL Distro** name (`Debian`).
 - Provide the **WSL Path** to the directory containing your compiled `IndexEBSD` executable (e.g., `/mnt/c/Software/EMSphInx`).
-- If your data is located on a network drive, configure the WSL mounting under "Configure Network Mounts" in the "Job Queue" tab.
+- If your data is located on a network drive, configure the WSL mounting under "Map WSL Mount Points".
 - Your settings are saved automatically. If you require WSL network mounting, EMSphInx Studio will handle mounting automatically.
+
+### 2. Parameter Management
+EMSphInx Studio automatically manages your parameters between sessions:
+- Default parameters are stored in `defaults.json`. This file contains the standard baseline values for both Oxford and EDAX modes.
+- Your customized settings from your last session are stored in `last_params.json` and loaded automatically.
+- You can revert to standard settings at any time using the **Reset to Defaults** button in the NML Builder tab.
 
 ### 2. Workflow Overview
 1. **System Mode Selection**: Choose either **EDAX** or **Oxford** at the top of the application depending on your data format.

@@ -1,0 +1,19 @@
+{
+    "system_mode": "OXFORD",
+    "OXFORD": {
+        "gausbckg": false,
+        "nregions": 0,
+        "bw": 123,
+        "native_delta": 23.0,
+        "nthread": 0,
+        "batchsize": 0
+    },
+    "EDAX": {
+        "gausbckg": true,
+        "nregions": 10,
+        "bw": 123,
+        "native_delta": 23.0,
+        "nthread": 0,
+        "batchsize": 0
+    }
+}

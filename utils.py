@@ -78,31 +78,119 @@ class ScrollableFrame(ttk.Frame):
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "app_config.json")
 PARAMS_FILE = os.path.join(SCRIPT_DIR, "last_params.json")
+DEFAULTS_FILE = os.path.join(SCRIPT_DIR, "defaults.json")
+DEFAULT_CONFIG_FILE = os.path.join(SCRIPT_DIR, "default_app_config.json")
 
 DEFAULT_CONFIG = {
     "wsl_distro": "Debian",
     "wsl_executable_dir": "/mnt/c/Software/EMSphInx",
     "sht_library_dir": "SHT_Library",
-    "wsl_drive_mappings": {"C:": "/mnt/c", "Z:": "/mnt/z/NetworkData"},
-    "wsl_network_mounts": {"/mnt/z": "\\\\YOUR_SERVER\\ShareName"},
+    "wsl_drive_mappings": {},
+    "wsl_network_mounts": {},
     "wsl_sudo_password": ""
 }
 
 DEFAULT_PARAMS = {
-    "gausbckg": True,
-    "nregions": 4,
-    "bw": 123,
-    "native_delta": 23.0,
-    "nthread": 0
+    "system_mode": "EDAX",
+    "OXFORD": {
+        "gausbckg": False,
+        "nregions": 0,
+        "bw": 123,
+        "nthread": 0,
+        "batchsize": 0
+    },
+    "EDAX": {
+        "gausbckg": True,
+        "nregions": 10,
+        "bw": 123,
+        "native_delta": 23.0,
+        "nthread": 0,
+        "batchsize": 0
+    }
 }
+
+def deep_update(d, u):
+    for k, v in u.items():
+        if isinstance(v, dict):
+            d[k] = deep_update(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
+
+def load_params():
+    # 1. Create/Load defaults.json
+    defaults = DEFAULT_PARAMS.copy()
+    if os.path.exists(DEFAULTS_FILE):
+        try:
+            with open(DEFAULTS_FILE, 'r') as f:
+                deep_update(defaults, json.load(f))
+        except Exception as e:
+            print(f"Error loading {DEFAULTS_FILE}: {e}")
+    else:
+        save_json(DEFAULTS_FILE, defaults)
+        
+    # 2. Load last_params.json over the defaults
+    params = defaults.copy()
+    if os.path.exists(PARAMS_FILE):
+        try:
+            with open(PARAMS_FILE, 'r') as f:
+                deep_update(params, json.load(f))
+        except Exception as e:
+            print(f"Error loading {PARAMS_FILE}: {e}")
+            
+    # Always save merged params back
+    save_json(PARAMS_FILE, params)
+    return params
+
+def get_current_user():
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:
+        return "default_user"
+
+def get_local_drives():
+    import string
+    drives = {}
+    for d in string.ascii_uppercase:
+        if os.path.exists(d + ':\\'):
+            # Only add to local drives if it's not a network drive
+            if get_connection(d) is None:
+                drives[f"{d}:"] = f"/mnt/{d.lower()}"
+    return drives
+
+def get_connection(drive):
+    import ctypes
+    from ctypes import wintypes
+    mpr = ctypes.windll.mpr
+    length = wintypes.DWORD(1024)
+    buffer = ctypes.create_unicode_buffer(1024)
+    res = mpr.WNetGetConnectionW(f'{drive}:', buffer, ctypes.byref(length))
+    if res == 0:
+        return buffer.value
+    return None
+
+def get_network_drives():
+    import string
+    network_mounts = {}
+    drive_mappings = {}
+
+    for d in string.ascii_uppercase:
+        if os.path.exists(d + ':\\'):
+            unc = get_connection(d)
+            if unc:
+                wsl_mnt = f"/mnt/{d.lower()}"
+                network_mounts[wsl_mnt] = unc
+                drive_mappings[f"{d}:"] = wsl_mnt
+                
+    return drive_mappings, network_mounts
 
 def load_json(filepath, defaults):
     merged = defaults.copy()
     if os.path.exists(filepath):
         try:
             with open(filepath, 'r') as f:
-                data = json.load(f)
-                merged.update(data)
+                merged.update(json.load(f))
         except Exception as e:
             print(f"Error loading {filepath}: {e}")
     save_json(filepath, merged)

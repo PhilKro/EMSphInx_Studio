@@ -172,6 +172,18 @@ class TabQueue(ttk.Frame):
     def stop_queue(self):
         self.stop_flag = True
         self.append_console("\n--- Stop Signal Sent. Waiting for current process to terminate... ---\n")
+        
+        distro = self.app.config.get("wsl_distro", "Debian")
+        # Kill the process inside WSL
+        subprocess.run(f'wsl -d {distro} -- pkill -9 IndexEBSD', shell=True, capture_output=True)
+        # Drop WSL caches to free the residual vmmemWSL memory
+        subprocess.run(f'wsl -d {distro} -u root -- bash -c "echo 3 > /proc/sys/vm/drop_caches"', shell=True, capture_output=True)
+        
+        if self.current_process:
+            try:
+                subprocess.run(f"taskkill /F /T /PID {self.current_process.pid}", shell=True, capture_output=True)
+            except Exception:
+                pass
 
     def start_queue(self):
         if self.thread is None or not self.thread.is_alive():
@@ -275,13 +287,14 @@ class TabQueue(ttk.Frame):
                     self.app.root.after(0, self.append_console, line_clean, False)
             
             self.current_process.wait()
+            ret_code = self.current_process.returncode
             self.current_process = None
             self.app.root.after(0, self.var_progress.set, 100.0)
             
             if self.stop_flag:
                 self.app.root.after(0, self.safe_tree_update, item, "status", "Stopped")
             else:
-                final_status = "Done" if getattr(self.current_process, 'returncode', -1) == 0 else "Failed"
+                final_status = "Done" if ret_code == 0 else "Failed"
                 self.app.root.after(0, self.safe_tree_update, item, "status", final_status)
                 self.app.root.after(0, self.append_console, f"\n=== Job {final_status} ===\n", False)
                 

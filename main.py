@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
+import json
 
 # Fix HDF5 Network Drive Bugs (eoa = 2048 / Link Iteration Failed)
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
@@ -30,8 +31,8 @@ class EMSphInxGUI:
             except tk.TclError:
                 pass 
         
-        self.config = utils.load_json(utils.CONFIG_FILE, utils.DEFAULT_CONFIG)
-        self.params = utils.load_json(utils.PARAMS_FILE, utils.DEFAULT_PARAMS)
+        self.initialize_config()
+        self.params = utils.load_params()
         
         sht_dir_abs = os.path.abspath(os.path.join(utils.SCRIPT_DIR, self.config.get("sht_library_dir", "SHT_Library")))
         if ' ' in sht_dir_abs:
@@ -42,6 +43,69 @@ class EMSphInxGUI:
 
         self.shared_state = utils.SharedState()
         self._setup_ui()
+
+    def initialize_config(self):
+        user = utils.get_current_user()
+        has_default = os.path.exists(utils.DEFAULT_CONFIG_FILE)
+        has_user_config = False
+        
+        app_config_data = {}
+        if os.path.exists(utils.CONFIG_FILE):
+            try:
+                with open(utils.CONFIG_FILE, 'r') as f:
+                    app_config_data = json.load(f)
+                
+                if app_config_data and "wsl_distro" in app_config_data:
+                    # Move top-level keys into the current user's profile instead of wiping the file
+                    top_level_keys = ["wsl_distro", "wsl_executable_dir", "sht_library_dir", "wsl_drive_mappings", "wsl_network_mounts", "wsl_sudo_password"]
+                    user_config = {}
+                    for k in top_level_keys:
+                        if k in app_config_data:
+                            user_config[k] = app_config_data.pop(k)
+                            
+                    # If this is the very first migration or an old version dumped top-level keys,
+                    # we assign them to the current user, keeping other users safe!
+                    app_config_data[user] = user_config
+                    utils.save_json(utils.CONFIG_FILE, app_config_data)
+                    
+                if user in app_config_data:
+                    has_user_config = True
+            except Exception:
+                pass
+                
+        if has_default and not has_user_config:
+            try:
+                with open(utils.DEFAULT_CONFIG_FILE, 'r') as f:
+                    def_config = json.load(f)
+            except Exception as e:
+                messagebox.showerror("Configuration Error", f"Failed to parse {utils.DEFAULT_CONFIG_FILE}. If you manually edited it, please fix any syntax errors.\n\n{e}")
+                return
+                
+            app_config_data[user] = def_config.copy()
+            if "wsl_drive_mappings" not in app_config_data[user] or not app_config_data[user]["wsl_drive_mappings"]:
+                app_config_data[user]["wsl_drive_mappings"] = utils.get_local_drives()
+            utils.save_json(utils.CONFIG_FILE, app_config_data)
+            self.config = app_config_data[user]
+            return
+            
+        if not has_default and not has_user_config:
+            messagebox.showinfo("First Time Setup", "Welcome! No configuration found.\nPlease setup your WSL environment and mappings before proceeding.")
+            
+            temp_config = utils.DEFAULT_CONFIG.copy()
+            
+            # Auto-detect both local and network mapped drives
+            net_mappings, net_mounts = utils.get_network_drives()
+            local_drives = utils.get_local_drives()
+            
+            temp_config["wsl_drive_mappings"] = {**local_drives, **net_mappings}
+            temp_config["wsl_network_mounts"] = net_mounts
+            
+            self.config = temp_config
+            
+            self.configure_wsl(is_first_setup=True)
+            return
+            
+        self.config = app_config_data[user]
 
     def _setup_ui(self):
         # Create Menu Bar
@@ -132,7 +196,7 @@ class EMSphInxGUI:
     def show_help(self):
         HelpDialog(self.root)
 
-    def configure_wsl(self):
+    def configure_wsl(self, is_first_setup=False):
         top = tk.Toplevel(self.root)
         top.title("WSL Configuration & Mounts")
         top.geometry("600x450")
@@ -150,62 +214,157 @@ class EMSphInxGUI:
         var_wsl_dir = tk.StringVar(value=self.config.get("wsl_executable_dir", ""))
         ttk.Entry(cfg_frame, textvariable=var_wsl_dir, width=30).pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(top, text="Map WSL Mount Points to Windows Network Shares", font=("Helvetica", 10, "bold")).pack(pady=10)
+        notebook = ttk.Notebook(top)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        cols = ("wsl", "win")
-        tree = ttk.Treeview(top, columns=cols, show="headings", height=5)
-        tree.heading("wsl", text="WSL Mount Point (e.g. /mnt/n)")
-        tree.heading("win", text="Windows Share (e.g. \\\\server\\share)")
-        tree.column("wsl", width=200)
-        tree.column("win", width=350)
-        tree.pack(fill=tk.BOTH, expand=True, padx=10)
+        # --- Network Mounts Tab ---
+        frame_net = ttk.Frame(notebook)
+        notebook.add(frame_net, text="Network Mounts")
+        
+        ttk.Label(frame_net, text="Mount UNC network paths to WSL (e.g. \\\\server\\share -> /mnt/n)", font=("Helvetica", 9)).pack(pady=5)
+        
+        cols_net = ("wsl", "win")
+        tree_net = ttk.Treeview(frame_net, columns=cols_net, show="headings", height=5)
+        tree_net.heading("wsl", text="WSL Mount Point")
+        tree_net.heading("win", text="Windows UNC Path")
+        tree_net.column("wsl", width=150)
+        tree_net.column("win", width=350)
+        tree_net.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         mounts = self.config.get("wsl_network_mounts", {})
         for wsl, win in mounts.items():
-            tree.insert("", tk.END, values=(wsl, win))
+            tree_net.insert("", tk.END, values=(wsl, win))
             
-        ctrl = ttk.Frame(top)
-        ctrl.pack(fill=tk.X, padx=10, pady=10)
+        ctrl_net = ttk.Frame(frame_net)
+        ctrl_net.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(ctrl, text="WSL:").pack(side=tk.LEFT)
-        var_wsl = tk.StringVar()
-        ttk.Entry(ctrl, textvariable=var_wsl, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Label(ctrl_net, text="WSL:").pack(side=tk.LEFT)
+        var_wsl_net = tk.StringVar()
+        ttk.Entry(ctrl_net, textvariable=var_wsl_net, width=15).pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(ctrl, text="Win:").pack(side=tk.LEFT)
-        var_win = tk.StringVar()
-        ttk.Entry(ctrl, textvariable=var_win, width=30).pack(side=tk.LEFT, padx=5)
+        ttk.Label(ctrl_net, text="Win UNC:").pack(side=tk.LEFT)
+        var_win_net = tk.StringVar()
+        ttk.Entry(ctrl_net, textvariable=var_win_net, width=30).pack(side=tk.LEFT, padx=5)
         
         def add_mount():
-            w = var_wsl.get().strip()
-            v = var_win.get().strip()
+            w = var_wsl_net.get().strip()
+            v = var_win_net.get().strip()
             if w and v:
-                tree.insert("", tk.END, values=(w, v))
-                var_wsl.set("")
-                var_win.set("")
+                tree_net.insert("", tk.END, values=(w, v))
+                var_wsl_net.set("")
+                var_win_net.set("")
         
-        ttk.Button(ctrl, text="Add", command=add_mount).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_net, text="Add", command=add_mount).pack(side=tk.LEFT, padx=5)
         
         def remove_mount():
-            sel = tree.selection()
-            for s in sel:
-                tree.delete(s)
+            for s in tree_net.selection():
+                tree_net.delete(s)
                 
-        ttk.Button(ctrl, text="Remove Selected", command=remove_mount).pack(side=tk.LEFT, padx=5)
+        ttk.Button(ctrl_net, text="Remove Selected", command=remove_mount).pack(side=tk.LEFT, padx=5)
+        
+        # --- Drive Mappings Tab ---
+        frame_drive = ttk.Frame(notebook)
+        notebook.add(frame_drive, text="Drive Mappings")
+        
+        ttk.Label(frame_drive, text="String replacement for drive letters (e.g. C: -> /mnt/c)", font=("Helvetica", 9)).pack(pady=5)
+        
+        cols_drive = ("win", "wsl")
+        tree_drive = ttk.Treeview(frame_drive, columns=cols_drive, show="headings", height=5)
+        tree_drive.heading("win", text="Windows Drive Letter")
+        tree_drive.heading("wsl", text="WSL Path Equivalent")
+        tree_drive.column("win", width=150)
+        tree_drive.column("wsl", width=350)
+        tree_drive.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        mappings = self.config.get("wsl_drive_mappings", {})
+        for win_drive, wsl_path in mappings.items():
+            tree_drive.insert("", tk.END, values=(win_drive, wsl_path))
+            
+        ctrl_drive = ttk.Frame(frame_drive)
+        ctrl_drive.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(ctrl_drive, text="Drive (X:):").pack(side=tk.LEFT)
+        var_win_drive = tk.StringVar()
+        ttk.Entry(ctrl_drive, textvariable=var_win_drive, width=10).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(ctrl_drive, text="WSL Path:").pack(side=tk.LEFT)
+        var_wsl_drive = tk.StringVar()
+        ttk.Entry(ctrl_drive, textvariable=var_wsl_drive, width=25).pack(side=tk.LEFT, padx=5)
+        
+        def add_mapping():
+            w = var_win_drive.get().strip().upper()
+            v = var_wsl_drive.get().strip()
+            if w and v:
+                if not w.endswith(':'): w += ':'
+                tree_drive.insert("", tk.END, values=(w, v))
+                var_win_drive.set("")
+                var_wsl_drive.set("")
+        
+        ttk.Button(ctrl_drive, text="Add", command=add_mapping).pack(side=tk.LEFT, padx=5)
+        
+        def remove_mapping():
+            for s in tree_drive.selection():
+                tree_drive.delete(s)
+                
+        ttk.Button(ctrl_drive, text="Remove Selected", command=remove_mapping).pack(side=tk.LEFT, padx=5)
         
         def save():
             new_mounts = {}
-            for item in tree.get_children():
-                w, v = tree.item(item, "values")
+            for item in tree_net.get_children():
+                w, v = tree_net.item(item, "values")
                 new_mounts[w] = v
+                
+            new_mappings = {}
+            for item in tree_drive.get_children():
+                w, v = tree_drive.item(item, "values")
+                new_mappings[w] = v
+                
             self.config["wsl_distro"] = var_distro.get()
             self.config["wsl_executable_dir"] = var_wsl_dir.get()
             self.config["wsl_network_mounts"] = new_mounts
-            utils.save_json(utils.CONFIG_FILE, self.config)
-            top.destroy()
+            self.config["wsl_drive_mappings"] = new_mappings
+            if is_first_setup or var_update_default.get():
+                utils.save_json(utils.DEFAULT_CONFIG_FILE, self.config)
+                
+            user = utils.get_current_user()
+            data = {}
+            if os.path.exists(utils.CONFIG_FILE):
+                try:
+                    with open(utils.CONFIG_FILE, 'r') as f:
+                        data = json.load(f)
+                except Exception as e:
+                    messagebox.showerror("Configuration Error", f"Failed to parse {utils.CONFIG_FILE}. If you manually edited it, please fix any syntax errors before saving.\n\n{e}")
+                    return
+            data[user] = self.config
+            utils.save_json(utils.CONFIG_FILE, data)
             
+            top.destroy()
+        def redetect_drives():
+            net_mappings, net_mounts = utils.get_network_drives()
+            local_drives = utils.get_local_drives()
+            all_mappings = {**local_drives, **net_mappings}
+            
+            for s in tree_net.get_children(): tree_net.delete(s)
+            for s in tree_drive.get_children(): tree_drive.delete(s)
+                
+            for wsl, win in net_mounts.items():
+                tree_net.insert("", tk.END, values=(wsl, win))
+            for win_drive, wsl_path in all_mappings.items():
+                tree_drive.insert("", tk.END, values=(win_drive, wsl_path))
+                
         btn_frame = ttk.Frame(top)
         btn_frame.pack(pady=10)
-        ttk.Button(btn_frame, text="Save & Close", command=save).pack()
+        
+        ttk.Button(btn_frame, text="Redetect All Mapped Drives", command=redetect_drives).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Save & Close", command=save).pack(side=tk.LEFT, padx=5)
+        
+        var_update_default = tk.BooleanVar(value=is_first_setup)
+        if not is_first_setup:
+            ttk.Checkbutton(top, text="Save as default for all new users (updates default_app_config.json)", variable=var_update_default).pack(pady=(0, 10))
+
+        if is_first_setup:
+            top.protocol("WM_DELETE_WINDOW", save)
+            self.root.wait_window(top)
 
 if __name__ == "__main__":
     root = tk.Tk()
