@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.venv/
 
 # EMSphInx Studio Specific Data
 app_config.json

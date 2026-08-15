@@ -2,6 +2,9 @@ import os
 import json
 import re
 import ctypes
+import platform
+import shlex
+import subprocess
 
 class MEMORYSTATUSEX(ctypes.Structure):
     _fields_ = [
@@ -20,11 +23,28 @@ class MEMORYSTATUSEX(ctypes.Structure):
         super(MEMORYSTATUSEX, self).__init__()
 
 def get_available_memory():
-    """Returns the available physical memory on Windows in bytes. Returns 8GB fallback if not on Windows."""
+    """Return an estimate of currently available physical memory in bytes."""
     if os.name == 'nt':
         stat = MEMORYSTATUSEX()
         ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
         return stat.ullAvailPhys
+
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ["vm_stat"], capture_output=True, text=True, check=True
+            )
+            page_size_match = re.search(r"page size of (\d+) bytes", result.stdout)
+            page_size = int(page_size_match.group(1)) if page_size_match else 4096
+            available_pages = 0
+            for label in ("Pages free", "Pages inactive", "Pages speculative"):
+                match = re.search(rf"^{label}:\s+(\d+)\.", result.stdout, re.MULTILINE)
+                if match:
+                    available_pages += int(match.group(1))
+            if available_pages:
+                return available_pages * page_size
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
     return 8 * 1024 * 1024 * 1024
 
 import tkinter as tk
@@ -71,7 +91,9 @@ class ScrollableFrame(ttk.Frame):
         
     def _on_mousewheel(self, event):
         if event.delta:
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            # Windows reports multiples of 120; Tk on macOS normally reports small deltas.
+            units = -int(event.delta / 120) if abs(event.delta) >= 120 else -int(event.delta)
+            self.canvas.yview_scroll(units, "units")
 
 
 
@@ -84,6 +106,7 @@ DEFAULT_CONFIG_FILE = os.path.join(SCRIPT_DIR, "default_app_config.json")
 DEFAULT_CONFIG = {
     "wsl_distro": "Debian",
     "wsl_executable_dir": "/mnt/c/Software/EMSphInx",
+    "native_executable_dir": "",
     "sht_library_dir": "SHT_Library",
     "wsl_drive_mappings": {},
     "wsl_network_mounts": {},
@@ -150,6 +173,8 @@ def get_current_user():
         return "default_user"
 
 def get_local_drives():
+    if os.name != 'nt':
+        return {}
     import string
     drives = {}
     for d in string.ascii_uppercase:
@@ -160,6 +185,8 @@ def get_local_drives():
     return drives
 
 def get_connection(drive):
+    if os.name != 'nt':
+        return None
     import ctypes
     from ctypes import wintypes
     mpr = ctypes.windll.mpr
@@ -171,6 +198,8 @@ def get_connection(drive):
     return None
 
 def get_network_drives():
+    if os.name != 'nt':
+        return {}, {}
     import string
     network_mounts = {}
     drive_mappings = {}
@@ -260,6 +289,83 @@ def to_windows_path(wsl_path, wsl_mappings, network_mounts=None):
         return f"{drive}{os.sep}{tail}"
 
     return wsl_path
+
+def uses_wsl():
+    """Whether EMSphInx must be launched through WSL on this host."""
+    return os.name == 'nt'
+
+def execution_backend_name():
+    if uses_wsl():
+        return "Windows / WSL"
+    if platform.system() == "Darwin":
+        return "macOS"
+    return platform.system() or "native"
+
+def to_execution_path(host_path, config):
+    """Translate a GUI-visible host path to the path read by IndexEBSD."""
+    if uses_wsl():
+        return to_wsl_path(
+            host_path,
+            config.get("wsl_drive_mappings", {}),
+            config.get("wsl_network_mounts", {}),
+        )
+    return os.path.abspath(os.path.expanduser(host_path))
+
+def to_host_path(execution_path, config):
+    """Translate an IndexEBSD/NML path back to a path visible to the GUI."""
+    if uses_wsl():
+        return to_windows_path(
+            execution_path,
+            config.get("wsl_drive_mappings", {}),
+            config.get("wsl_network_mounts", {}),
+        )
+    return os.path.abspath(os.path.expanduser(execution_path))
+
+def get_indexebsd_executable(config):
+    """Return the configured native IndexEBSD path, or an empty string for WSL."""
+    if uses_wsl():
+        return ""
+    configured_dir = config.get("native_executable_dir", "").strip()
+    executable_dir = os.path.abspath(os.path.expanduser(configured_dir)) if configured_dir else ""
+    return os.path.join(executable_dir, "IndexEBSD") if executable_dir else ""
+
+def build_native_index_command(config, nml_path):
+    """Build a shell-free command for native IndexEBSD execution."""
+    execution_nml = to_execution_path(nml_path, config)
+    executable = get_indexebsd_executable(config)
+    return [executable, execution_nml]
+
+def format_command(command):
+    """Format an argument list for display only."""
+    if os.name == 'nt':
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+def validate_execution_config(config):
+    """Return a user-facing configuration error, or None when launch is possible."""
+    if uses_wsl():
+        if not config.get("wsl_distro", "").strip():
+            return "No WSL distribution is configured."
+        if not config.get("wsl_executable_dir", "").strip():
+            return "No WSL EMSphInx executable directory is configured."
+        return None
+
+    executable = get_indexebsd_executable(config)
+    if not executable:
+        return "No EMSphInx executable directory is configured."
+    if not os.path.isfile(executable):
+        return f"IndexEBSD was not found at:\n{executable}"
+    if not os.access(executable, os.X_OK):
+        return f"IndexEBSD is not executable:\n{executable}\n\nRun: chmod +x {executable}"
+    return None
+
+def nml_string(value):
+    """Return a Fortran namelist string literal, including escaped apostrophes."""
+    return "'" + value.replace("'", "''") + "'"
+
+def parse_nml_string(value):
+    """Decode the contents of a Fortran single-quoted string literal."""
+    return value.replace("''", "'")
 
 def sanitize_sht_filename(filename):
     name, ext = os.path.splitext(filename)

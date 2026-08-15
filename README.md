@@ -1,63 +1,97 @@
 # EMSphInx Studio
 
-EMSphInx Studio is a graphical user interface designed for **EMSphInx**, a software package for **spherical indexing of electron diffraction patterns** running under the Windows Subsystem for Linux (WSL).
+EMSphInx Studio is a graphical interface for spherical indexing of EDAX (`.edaxh5` + `.up1`) and Oxford Instruments (`.h5oina`) EBSD datasets with [EMSphInx](https://github.com/EMsoft-org/EMSphInx).
 
-It provides integration for visualizing, managing, and automatically processing EBSD datasets from **EDAX (.edaxh5 + .up1)** and **Oxford Instruments (.h5oina)** systems.
+The Studio detects the host operating system at startup and selects the appropriate execution method:
 
-## Key Features
+| Host | Where `IndexEBSD` runs | Paths written to NML files | Network storage |
+| --- | --- | --- | --- |
+| Windows | Inside the configured WSL distribution | Windows paths are translated to WSL paths | Configured UNC shares can be mounted automatically with `drvfs` |
+| macOS | Directly on macOS as a native executable | Native absolute macOS paths | Shares must already be mounted by macOS, normally under `/Volumes` |
 
-- **Interactive Map Viewers**: Instantly load and visualize map grids and raw diffraction patterns from binary datasets. Features custom Region of Interest (ROI) drawing and live spatial probing of EBSD patterns.
-- **Asynchronous Data Unpacking**: Handles Oxford `.h5oina` files by asynchronously unpacking packed detector arrays into `.up1` files (this is done due to troubles with indexing .h5oina files with EMSphInx, if you find a fix for this please let me know, or make a pull request!).
-- **WSL Job Queuing**: A queue that automatically marshals file paths between Windows and WSL environments, automatically mounts missing network drives, and pipes EMSphInx'soutput directly to a live console.
-- **Master Pattern Management**: Instantly fetch and manage `SHT` Master Patterns directly from the EMsoft GitHub API or load your own local libraries.
+The viewers, NML builders, Oxford-to-UP1 conversion, job queue, progress display, and SHT library management are shared by both platforms.
 
----
+## Windows / WSL
 
-## Requirements
+### Requirements
 
-Launch from your terminal with:
-```bash
-python main.py
+- Windows with WSL 2.
+- A WSL Linux distribution such as Debian.
+- EMSphInx installed or compiled inside WSL, including the Linux `IndexEBSD` executable.
+- Python 3.8+ on Windows with Tkinter.
+
+The Windows application does not run a Windows build of `IndexEBSD`. It launches the Linux executable inside WSL.
+
+### Install and launch the Studio
+
+From PowerShell in the EMSphInx Studio directory:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python main.py
 ```
 
-To run EMSphInx Studio, ensure you have the following installed:
+### Configure WSL execution
 
-### Windows Host
-- **Python 3.8+**
-- Standard Python dependencies (install via pip):
-  ```bash
-  pip install numpy h5py pillow requests matplotlib
-  ```
-- **Tkinter** (Usually included with standard Python installations)
+Open **Settings > EMSphInx Configuration (Windows / WSL)** and configure:
 
-### Windows Subsystem for Linux (WSL)
-- **WSL 2** configured with a Linux Debian distribution.
-- **EMSphInx** installed and compiled within your WSL environment (specifically, the `IndexEBSD` binary). Use the precompiled Debian version from https://github.com/EMsoft-org/EMSphInx/releases.
-- If your data resides on network drives, WSL must be able to resolve and mount them via `drvfs`.
+1. **WSL Distro**: the distribution containing EMSphInx, for example `Debian`.
+2. **EMSphInx Executable Dir**: the WSL directory containing `IndexEBSD`, for example `/mnt/c/Software/EMSphInx`.
+3. **Drive Mappings**: mappings such as `C:` to `/mnt/c`. These convert paths selected by the Windows GUI into paths accessible inside WSL.
+4. **Network Mounts**: optional UNC shares that the Studio should mount inside WSL using `drvfs`.
 
----
+Configure mappings before generating NML files because Windows-generated NML files contain WSL paths. Existing WSL configuration keys and per-user configuration files remain supported.
 
-## Quick Guide
+## macOS
 
-### 1. Configuration
-When you first launch the application, you must configure the connection to your WSL environment:
-- Open the **Settings > WSL Configuration & Mounts** menu at the top of the window.
-- Set your **WSL Distro** name (`Debian`).
-- Provide the **WSL Path** to the directory containing your compiled `IndexEBSD` executable (e.g., `/mnt/c/Software/EMSphInx`).
-- If your data is located on a network drive, configure the WSL mounting under "Map WSL Mount Points".
-- Your settings are saved automatically. If you require WSL network mounting, EMSphInx Studio will handle mounting automatically.
+### Requirements
 
-### 2. Parameter Management
-EMSphInx Studio automatically manages your parameters between sessions:
-- Default parameters are stored in `defaults.json`. This file contains the standard baseline values for both Oxford and EDAX modes.
-- Your customized settings from your last session are stored in `last_params.json` and loaded automatically.
-- You can revert to standard settings at any time using the **Reset to Defaults** button in the NML Builder tab.
+- macOS with Python 3.8+ and a modern Tkinter installation.
+- EMSphInx compiled for macOS, including a native `IndexEBSD` executable.
 
-### 2. Workflow Overview
-1. **System Mode Selection**: Choose either **EDAX** or **Oxford** at the top of the application depending on your data format.
-2. **Visualize Data**: Navigate to the Pattern Viewer tab. Load your `.edaxh5` / `.up1` or `.h5oina` files. Click **Initialize Interactive Map** to load the patterns into fast memory. You can Shift+Drag to define an indexing ROI.
-3. **Build NML**: Switch to the NML Builder tab. Fetch the necessary SHT Master Patterns, configure your spherical bandwidth and filtering parameters, and click **Generate NML & Add to Queue**.
-4. **Execute**: Switch to the Job Queue tab. Your jobs will appear as *Pending*. Click **Start Queue** to automatically execute them sequentially through your WSL environment.
+The macOS application does not use WSL and does not translate paths. It launches the native macOS executable directly.
 
-### 3. Help System
-A detailed help window is provided at `Help > EMSphInx Studio Help` in the top menu bar. It includes explanations of specific parameters and interactions for each tab.
+### Install and launch the Studio
+
+With Homebrew Python 3.12:
+
+```bash
+brew install python@3.12 python-tk@3.12
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
+
+Do not launch the Studio with `/usr/bin/python3`. Apple's bundled Python uses an obsolete system Tk and can abort with a misleading `macOS ... or later required` message.
+
+### Configure native execution
+
+1. Build EMSphInx for macOS and locate the directory containing `IndexEBSD`.
+2. Start the Studio with `.venv/bin/python main.py`.
+3. On first launch, select the directory containing `IndexEBSD`. It can be changed later under **Settings > EMSphInx Configuration (macOS)**.
+4. If necessary, make the executable runnable:
+
+   ```bash
+   chmod +x /path/to/EMSphInx/IndexEBSD
+   ```
+
+Data, SHT, output, and NML paths are passed directly to `IndexEBSD` as native absolute macOS paths. Network shares must already be mounted by macOS before a job starts; Finder-mounted shares are normally available under `/Volumes`.
+
+## Shared workflow
+
+1. Choose EDAX or Oxford mode.
+2. Load and inspect the data in the pattern viewer. Shift-drag defines an optional indexing ROI.
+3. Select or fetch SHT master patterns and generate the NML in the NML Builder.
+4. Start the queue and monitor the live `IndexEBSD` output.
+
+Oxford `.h5oina` patterns are unpacked asynchronously to `.up1` because direct indexing of the packed source has proved unreliable. The writer batches large datasets according to available memory.
+
+## Moving jobs between platforms
+
+NML files contain platform-specific absolute paths:
+
+- NML files generated on Windows contain WSL paths such as `/mnt/c/...`.
+- NML files generated on macOS contain native paths such as `/Users/...` or `/Volumes/...`.
+
+When moving a job between Windows/WSL and macOS, regenerate its NML on the destination system or update every referenced path.

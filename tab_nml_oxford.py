@@ -548,12 +548,10 @@ class TabNMLOxford(ttk.Frame):
         PC_Y_Emsoft = self.state.pat_w * pcy - 0.5 * self.state.pat_h
         DD_Emsoft = self.state.pat_w * dd * native_delta
 
-        wsl_maps = self.app.config.get("wsl_drive_mappings", {})
-        net_mounts = self.app.config.get("wsl_network_mounts", {})
-        write_up1 = utils.to_wsl_path(out_up1, wsl_maps, net_mounts)
-        wsl_master_paths = [utils.to_wsl_path(p, wsl_maps, net_mounts) for p in sht_paths]
-        masterfile_str = ",".join(f"'{p}'" for p in wsl_master_paths) + ","
-        write_out = utils.to_wsl_path(out_nml, wsl_maps, net_mounts)
+        write_up1 = utils.to_execution_path(out_up1, self.app.config)
+        master_paths = [utils.to_execution_path(p, self.app.config) for p in sht_paths]
+        masterfile_str = ",".join(utils.nml_string(p) for p in master_paths) + ","
+        write_out = utils.to_execution_path(out_nml, self.app.config)
         base_out = os.path.splitext(write_out)[0]
 
         try:
@@ -562,7 +560,7 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Input Files\n")
                 f_nml.write("!#################################################################\n")
-                f_nml.write(f" patfile    = '{write_up1}',\n\n")
+                f_nml.write(f" patfile    = {utils.nml_string(write_up1)},\n\n")
                 f_nml.write(f" masterfile = {masterfile_str}\n\n")
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Pattern Processing\n")
@@ -598,10 +596,10 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Output Files\n")
                 f_nml.write("!#################################################################\n")
-                f_nml.write(f" datafile   = '{base_out}.h5',\n")
-                f_nml.write(f" vendorfile = '{base_out}.ang',\n")
-                f_nml.write(f" ipfmap     = '{base_out}_ipf.png',\n")
-                f_nml.write(f" qualmap    = '{base_out}_q.png'\n")
+                f_nml.write(f" datafile   = {utils.nml_string(base_out + '.h5')},\n")
+                f_nml.write(f" vendorfile = {utils.nml_string(base_out + '.ang')},\n")
+                f_nml.write(f" ipfmap     = {utils.nml_string(base_out + '_ipf.png')},\n")
+                f_nml.write(f" qualmap    = {utils.nml_string(base_out + '_q.png')}\n")
                 f_nml.write(" /\n")
         except Exception as e:
             messagebox.showerror("NML Error", f"Failed to write NML file:\n{e}")

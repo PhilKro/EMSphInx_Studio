@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, filedialog, messagebox
 import os
 import json
 
@@ -19,8 +19,8 @@ class EMSphInxGUI:
         self.root = root
         self.root.title("EMSphInx Studio")
         self.root.geometry("1300x800")
-        
-        # Intercept the close action to handle WSL process safety
+
+        # Intercept close so native/WSL jobs and partial UP1 writes are stopped safely.
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         try:
@@ -32,6 +32,12 @@ class EMSphInxGUI:
                 pass 
         
         self.initialize_config()
+        if not utils.uses_wsl() and not self.config.get("native_executable_dir", "").strip():
+            messagebox.showinfo(
+                "First Time Setup",
+                f"Select the folder containing the {utils.execution_backend_name()} IndexEBSD executable.",
+            )
+            self.configure_execution(is_first_setup=True)
         self.params = utils.load_params()
         
         sht_dir_abs = os.path.abspath(os.path.join(utils.SCRIPT_DIR, self.config.get("sht_library_dir", "SHT_Library")))
@@ -57,7 +63,7 @@ class EMSphInxGUI:
                 
                 if app_config_data and "wsl_distro" in app_config_data:
                     # Move top-level keys into the current user's profile instead of wiping the file
-                    top_level_keys = ["wsl_distro", "wsl_executable_dir", "sht_library_dir", "wsl_drive_mappings", "wsl_network_mounts", "wsl_sudo_password"]
+                    top_level_keys = ["wsl_distro", "wsl_executable_dir", "native_executable_dir", "sht_library_dir", "wsl_drive_mappings", "wsl_network_mounts", "wsl_sudo_password"]
                     user_config = {}
                     for k in top_level_keys:
                         if k in app_config_data:
@@ -89,7 +95,7 @@ class EMSphInxGUI:
             return
             
         if not has_default and not has_user_config:
-            messagebox.showinfo("First Time Setup", "Welcome! No configuration found.\nPlease setup your WSL environment and mappings before proceeding.")
+            messagebox.showinfo("First Time Setup", f"Welcome! No configuration found.\nPlease configure EMSphInx for {utils.execution_backend_name()} before proceeding.")
             
             temp_config = utils.DEFAULT_CONFIG.copy()
             
@@ -102,10 +108,12 @@ class EMSphInxGUI:
             
             self.config = temp_config
             
-            self.configure_wsl(is_first_setup=True)
+            self.configure_execution(is_first_setup=True)
             return
-            
+
         self.config = app_config_data[user]
+        for key, value in utils.DEFAULT_CONFIG.items():
+            self.config.setdefault(key, value.copy() if isinstance(value, dict) else value)
 
     def _setup_ui(self):
         # Create Menu Bar
@@ -118,7 +126,7 @@ class EMSphInxGUI:
 
         settings_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Settings", menu=settings_menu)
-        settings_menu.add_command(label="WSL Configuration & Mounts", command=self.configure_wsl)
+        settings_menu.add_command(label=f"EMSphInx Configuration ({utils.execution_backend_name()})", command=self.configure_execution)
 
         header = ttk.Frame(self.root, padding=10)
         header.pack(fill=tk.X)
@@ -167,7 +175,7 @@ class EMSphInxGUI:
         self.notebook.add(self.tab_queue, text=" Job Queue & Execution ")
 
     def on_closing(self):
-        """Handle application close gracefully to prevent WSL zombie processes and partial UP1 files."""
+        """Handle application close without orphaned jobs or partial UP1 files."""
         is_queue_running = self.tab_queue.thread and self.tab_queue.thread.is_alive()
         is_up1_writing = bool(self.shared_state.up1_tasks)
         
@@ -175,11 +183,7 @@ class EMSphInxGUI:
             msg = "Background tasks are currently running (Queue or UP1 Generation).\n\nDo you want to abort them and exit the application?"
             if messagebox.askokcancel("Running Tasks Detected", msg):
                 self.tab_queue.stop_flag = True
-                if self.tab_queue.current_process:
-                    try:
-                        self.tab_queue.current_process.kill()
-                    except Exception:
-                        pass
+                self.tab_queue.terminate_current_process()
                 
                 # Wait briefly to let UP1 writer threads catch the flag, clean up partial files, and exit
                 if is_up1_writing:
@@ -195,6 +199,73 @@ class EMSphInxGUI:
 
     def show_help(self):
         HelpDialog(self.root)
+
+    def configure_execution(self, is_first_setup=False):
+        if utils.uses_wsl():
+            self.configure_wsl(is_first_setup=is_first_setup)
+        else:
+            self.configure_native(is_first_setup=is_first_setup)
+
+    def configure_native(self, is_first_setup=False):
+        top = tk.Toplevel(self.root)
+        top.title(f"EMSphInx Configuration ({utils.execution_backend_name()})")
+        top.geometry("700x190")
+        top.resizable(True, False)
+        top.transient(self.root)
+        top.grab_set()
+
+        frame = ttk.LabelFrame(top, text="Native execution", padding=12)
+        frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+        ttk.Label(
+            frame,
+            text="Folder containing the compiled IndexEBSD executable:",
+        ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 8))
+
+        var_native_dir = tk.StringVar(value=self.config.get("native_executable_dir", ""))
+        entry = ttk.Entry(frame, textvariable=var_native_dir, width=70)
+        entry.grid(row=1, column=0, sticky=tk.EW, padx=(0, 8))
+
+        def browse():
+            selected = filedialog.askdirectory(
+                parent=top,
+                initialdir=var_native_dir.get() or os.getcwd(),
+                title="Select the folder containing IndexEBSD",
+            )
+            if selected:
+                var_native_dir.set(selected)
+
+        ttk.Button(frame, text="Browse…", command=browse).grid(row=1, column=1)
+        ttk.Label(
+            frame,
+            text="Data, NML, SHT, and output paths are passed directly as native paths.",
+        ).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(8, 12))
+        frame.columnconfigure(0, weight=1)
+
+        def save():
+            selected_dir = os.path.abspath(os.path.expanduser(var_native_dir.get().strip())) if var_native_dir.get().strip() else ""
+            self.config["native_executable_dir"] = selected_dir
+            if selected_dir:
+                config_error = utils.validate_execution_config(self.config)
+                if config_error:
+                    messagebox.showerror("EMSphInx Configuration", config_error, parent=top)
+                    return
+            user = utils.get_current_user()
+            data = {}
+            if os.path.exists(utils.CONFIG_FILE):
+                try:
+                    with open(utils.CONFIG_FILE, "r") as f:
+                        data = json.load(f)
+                except Exception as e:
+                    messagebox.showerror("Configuration Error", f"Failed to parse {utils.CONFIG_FILE}.\n\n{e}", parent=top)
+                    return
+            data[user] = self.config
+            utils.save_json(utils.CONFIG_FILE, data)
+            top.destroy()
+
+        ttk.Button(frame, text="Save & Close", command=save).grid(row=3, column=0, columnspan=2)
+        if is_first_setup:
+            top.protocol("WM_DELETE_WINDOW", save)
+            self.root.wait_window(top)
 
     def configure_wsl(self, is_first_setup=False):
         top = tk.Toplevel(self.root)
