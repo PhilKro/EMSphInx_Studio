@@ -481,13 +481,10 @@ class TabNMLBuilderEdax(ttk.Frame):
         PCy_emsoft = self.state.pat_w * pcy - 0.5 * self.state.pat_h
         DD_emsoft  = self.state.pat_w * pcz * delta
 
-        wsl_maps = self.app.config.get("wsl_drive_mappings", {})
-        net_mounts = self.app.config.get("wsl_network_mounts", {})
-        write_up1 = utils.to_wsl_path(self.state.up1_path, wsl_maps, net_mounts)
-        
-        wsl_master_paths = [utils.to_wsl_path(p, wsl_maps, net_mounts) for p in sht_paths]
-        masterfile_str = ",".join(f"'{p}'" for p in wsl_master_paths) + ","
-        write_out = utils.to_wsl_path(out_nml, wsl_maps, net_mounts)
+        write_up1 = utils.to_execution_path(self.state.up1_path, self.app.config)
+        master_paths = [utils.to_execution_path(p, self.app.config) for p in sht_paths]
+        masterfile_str = ",".join(utils.nml_string(p) for p in master_paths) + ","
+        write_out = utils.to_execution_path(out_nml, self.app.config)
 
         try:
             with open(out_nml, "w", newline='\n') as f:
@@ -495,7 +492,7 @@ class TabNMLBuilderEdax(ttk.Frame):
                 f.write("!#################################################################\n")
                 f.write("! Input Files\n")
                 f.write("!#################################################################\n")
-                f.write(f" patfile    = '{write_up1}',\n\n")
+                f.write(f" patfile    = {utils.nml_string(write_up1)},\n\n")
                 f.write(f" masterfile = {masterfile_str}\n\n")
                 f.write("!#################################################################\n")
                 f.write("! Pattern Processing\n")
@@ -532,10 +529,10 @@ class TabNMLBuilderEdax(ttk.Frame):
                 f.write("! Output Files\n")
                 f.write("!#################################################################\n")
                 base_out = os.path.splitext(write_out)[0]
-                f.write(f" datafile   = '{base_out}.h5',\n")
-                f.write(f" vendorfile = '{base_out}.ang',\n")
-                f.write(f" ipfmap     = '{base_out}_ipf.png',\n")
-                f.write(f" qualmap    = '{base_out}_q.png'\n")
+                f.write(f" datafile   = {utils.nml_string(base_out + '.h5')},\n")
+                f.write(f" vendorfile = {utils.nml_string(base_out + '.ang')},\n")
+                f.write(f" ipfmap     = {utils.nml_string(base_out + '_ipf.png')},\n")
+                f.write(f" qualmap    = {utils.nml_string(base_out + '_q.png')}\n")
                 f.write(" /\n")
 
             self.app.tab_queue.add_job(self.state.scan_name, out_nml)

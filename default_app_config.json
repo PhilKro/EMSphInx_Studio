@@ -1,6 +1,7 @@
 {
     "wsl_distro": "Debian",
     "wsl_executable_dir": "/mnt/d/Software/EMSphInx_Debian",
+    "native_executable_dir": "",
     "sht_library_dir": "SHT_Library",
     "wsl_drive_mappings": {
         "C:": "/mnt/c",

@@ -4,6 +4,7 @@ import threading
 import subprocess
 import re
 import os
+import signal
 import utils
 
 class TabQueue(ttk.Frame):
@@ -70,33 +71,33 @@ class TabQueue(ttk.Frame):
                 with open(filepath, 'r') as f:
                     content = f.read()
                     
-                mappings = self.app.config.get("wsl_drive_mappings", {})
-                net_mounts = self.app.config.get("wsl_network_mounts", {})
-                
-                pat_match = re.search(r"patfile\s*=\s*'([^']+)'", content)
+                pat_match = re.search(r"patfile\s*=\s*'((?:''|[^'])*)'", content)
                 master_match = re.search(r"masterfile\s*=\s*(.+?)(?:\n|!|$)", content)
                 
                 missing = []
                 
                 if pat_match:
-                    wsl_pat = pat_match.group(1)
-                    win_pat = utils.to_windows_path(wsl_pat, mappings, net_mounts)
-                    if not os.path.exists(win_pat):
-                        missing.append(win_pat)
+                    execution_pat = utils.parse_nml_string(pat_match.group(1))
+                    host_pat = utils.to_host_path(execution_pat, self.app.config)
+                    if not os.path.exists(host_pat):
+                        missing.append(host_pat)
                 else:
                     messagebox.showerror("Error", f"Could not find 'patfile' inside {os.path.basename(filepath)}.")
                     continue
                     
                 if master_match:
                     master_raw = master_match.group(1)
-                    wsl_masters = re.findall(r"'([^']+)'", master_raw)
-                    for w_m in wsl_masters:
-                        win_m = utils.to_windows_path(w_m, mappings, net_mounts)
-                        if not os.path.exists(win_m):
+                    execution_masters = [
+                        utils.parse_nml_string(value)
+                        for value in re.findall(r"'((?:''|[^'])*)'", master_raw)
+                    ]
+                    for execution_master in execution_masters:
+                        host_master = utils.to_host_path(execution_master, self.app.config)
+                        if not os.path.exists(host_master):
                             sht_lib_dir = os.path.join(utils.SCRIPT_DIR, self.app.config.get("sht_library_dir", "SHT_Library"))
-                            fallback_path = os.path.join(sht_lib_dir, os.path.basename(w_m))
+                            fallback_path = os.path.join(sht_lib_dir, os.path.basename(execution_master))
                             if not os.path.exists(fallback_path):
-                                missing.append(win_m)
+                                missing.append(host_master)
                 else:
                     messagebox.showerror("Error", f"Could not find 'masterfile' inside {os.path.basename(filepath)}.")
                     continue
@@ -172,21 +173,41 @@ class TabQueue(ttk.Frame):
     def stop_queue(self):
         self.stop_flag = True
         self.append_console("\n--- Stop Signal Sent. Waiting for current process to terminate... ---\n")
-        
-        distro = self.app.config.get("wsl_distro", "Debian")
-        # Kill the process inside WSL
-        subprocess.run(f'wsl -d {distro} -- pkill -9 IndexEBSD', shell=True, capture_output=True)
-        # Drop WSL caches to free the residual vmmemWSL memory
-        subprocess.run(f'wsl -d {distro} -u root -- bash -c "echo 3 > /proc/sys/vm/drop_caches"', shell=True, capture_output=True)
-        
-        if self.current_process:
+        self.terminate_current_process()
+
+    def terminate_current_process(self):
+        """Stop IndexEBSD and its children using the host's process model."""
+        process = self.current_process
+        if utils.uses_wsl():
+            distro = self.app.config.get("wsl_distro", "Debian")
+            subprocess.run(f'wsl -d {distro} -- pkill -9 IndexEBSD', shell=True, capture_output=True)
+            subprocess.run(f'wsl -d {distro} -u root -- bash -c "echo 3 > /proc/sys/vm/drop_caches"', shell=True, capture_output=True)
+            if process:
+                try:
+                    subprocess.run(f"taskkill /F /T /PID {process.pid}", shell=True, capture_output=True)
+                except Exception:
+                    pass
+            return
+
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
             try:
-                subprocess.run(f"taskkill /F /T /PID {self.current_process.pid}", shell=True, capture_output=True)
-            except Exception:
+                process.terminate()
+            except OSError:
                 pass
 
     def start_queue(self):
         if self.thread is None or not self.thread.is_alive():
+            config_error = utils.validate_execution_config(self.app.config)
+            if config_error:
+                messagebox.showerror(
+                    "EMSphInx Configuration",
+                    f"{config_error}\n\nOpen Settings > EMSphInx Configuration to correct it.",
+                )
+                return
             self.stop_flag = False
             self.btn_start.config(state=tk.DISABLED)
             self.btn_stop.config(state=tk.NORMAL)
@@ -194,6 +215,8 @@ class TabQueue(ttk.Frame):
             self.thread.start()
 
     def check_and_mount_network_drives(self):
+        if not utils.uses_wsl():
+            return True
         distro = self.app.config.get("wsl_distro", "Debian")
         mounts = self.app.config.get("wsl_network_mounts", {})
         if not mounts:
@@ -202,7 +225,7 @@ class TabQueue(ttk.Frame):
         for mnt_point, win_share in mounts.items():
             if self.stop_flag: return False
             
-            # Check if directory exists
+            # These commands intentionally retain the existing, Windows-tested WSL path.
             check_dir_cmd = f'wsl -d {distro} -u root -- bash -c "if [ ! -d \'{mnt_point}\' ]; then echo missing; fi"'
             res = subprocess.run(check_dir_cmd, shell=True, capture_output=True, text=True)
             if "missing" in res.stdout:
@@ -214,7 +237,6 @@ class TabQueue(ttk.Frame):
             res = subprocess.run(check_mnt_cmd, shell=True, capture_output=True, text=True)
             if f" {mnt_point} " not in res.stdout:
                 self.app.root.after(0, self.append_console, f"\n--- Mounting network drive: {win_share} -> {mnt_point} ---\n", False)
-                # Escape backslashes for bash/WSL argument passing
                 win_share_esc = win_share.replace('\\', '\\\\')
                 mnt_cmd = f'wsl -d {distro} -u root -- mount -t drvfs \'{win_share_esc}\' \'{mnt_point}\''
                 mnt_res = subprocess.run(mnt_cmd, shell=True, capture_output=True, text=True)
@@ -249,21 +271,47 @@ class TabQueue(ttk.Frame):
             
             if not self.tree.exists(item): continue
             nml_path = self.tree.item(item, "values")[2]
-            distro = self.app.config.get("wsl_distro", "Debian")
-            wsl_exe_dir = self.app.config.get("wsl_executable_dir", "")
-            wsl_nml_path = utils.to_wsl_path(nml_path, self.app.config.get("wsl_drive_mappings", {}), self.app.config.get("wsl_network_mounts", {}))
-            
             if not self.check_and_mount_network_drives():
                 self.app.root.after(0, self.safe_tree_update, item, "status", "Failed (Mount Error)")
                 self.app.root.after(0, self.append_console, "\n=== Job Aborted due to network mount failure ===\n", False)
                 self.app.root.after(0, self.update_global_progress_label)
                 continue
                 
-            cmd = f'wsl -d {distro} -- bash -c "cd \'{wsl_exe_dir}\' && ./IndexEBSD \'{wsl_nml_path}\'"'
-            
-            self.app.root.after(0, self.append_console, f"\n=== Starting Job ===\nCMD: {cmd}\n\n", False)
-            
-            self.current_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
+            if utils.uses_wsl():
+                distro = self.app.config.get("wsl_distro", "Debian")
+                wsl_exe_dir = self.app.config.get("wsl_executable_dir", "")
+                wsl_nml_path = utils.to_execution_path(nml_path, self.app.config)
+                cmd = f'wsl -d {distro} -- bash -c "cd \'{wsl_exe_dir}\' && ./IndexEBSD \'{wsl_nml_path}\'"'
+                self.app.root.after(0, self.append_console, f"\n=== Starting Job (Windows / WSL) ===\nCMD: {cmd}\n\n", False)
+                self.current_process = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                )
+            else:
+                cmd = utils.build_native_index_command(self.app.config, nml_path)
+                display_cmd = utils.format_command(cmd)
+                self.app.root.after(0, self.append_console, f"\n=== Starting Job ({utils.execution_backend_name()}) ===\nCMD: {display_cmd}\n\n", False)
+                try:
+                    self.current_process = subprocess.Popen(
+                        cmd,
+                        cwd=os.path.dirname(cmd[0]),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        errors="replace",
+                        bufsize=1,
+                        start_new_session=True,
+                    )
+                except OSError as e:
+                    self.app.root.after(0, self.safe_tree_update, item, "status", "Failed")
+                    self.app.root.after(0, self.append_console, f"\nCould not start IndexEBSD:\n{e}\n", False)
+                    self.app.root.after(0, self.update_global_progress_label)
+                    continue
             
             for line in self.current_process.stdout:
                 if self.stop_flag:
