@@ -626,14 +626,14 @@ class TabNMLOxford(ttk.Frame):
         job_config["item_id"] = item_id
 
         self.lbl_progress.config(text="Job queued successfully.")
+        self.app.notebook.select(self.app.tab_queue)
+        self.app.tab_queue.start_queue()
         
         if out_up1 in self.app.shared_state.up1_tasks:
             self.app.shared_state.up1_tasks[out_up1]["jobs"].append(job_config)
-            self.app.notebook.select(self.app.tab_queue)
         elif not skip_up1:
             self.app.shared_state.up1_tasks[out_up1] = {"mem": req_mem, "jobs": [job_config]}
             threading.Thread(target=self._worker_generate_up1, args=(out_up1, self.state.h5_path, self.state.scan_name), daemon=True).start()
-            self.app.notebook.select(self.app.tab_queue)
 
     def _worker_generate_up1(self, out_up1, h5_path, scan_name):
         try:
