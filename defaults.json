@@ -1,6 +1,7 @@
 {
     "system_mode": "OXFORD",
     "OXFORD": {
+        "binning": 1,
         "gausbckg": false,
         "nregions": 0,
         "bw": 123,

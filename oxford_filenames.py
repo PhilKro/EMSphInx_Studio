@@ -3,13 +3,14 @@ import os
 import re
 
 
-def output_name_parts(h5_path, map_name, bw):
+def output_name_parts(h5_path, map_name, bw, binning=1):
     """Return the current and pre-2026 Oxford output name components."""
     basename = os.path.splitext(os.path.basename(h5_path))[0]
-    clean_up1 = f"{basename}.up1"
-    legacy_up1 = f"{basename}_{map_name}.up1"
-    clean_nml_prefix = f"{basename}_BW{bw}"
-    legacy_nml_prefix = f"{basename}_{map_name}_BW{bw}"
+    bin_tag = "" if int(binning) == 1 else f"_bin{int(binning)}"
+    clean_up1 = f"{basename}{bin_tag}.up1"
+    legacy_up1 = f"{basename}_{map_name}{bin_tag}.up1"
+    clean_nml_prefix = f"{basename}{bin_tag}_BW{bw}"
+    legacy_nml_prefix = f"{basename}_{map_name}{bin_tag}_BW{bw}"
     return clean_up1, legacy_up1, clean_nml_prefix, legacy_nml_prefix
 
 

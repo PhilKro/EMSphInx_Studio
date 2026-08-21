@@ -18,6 +18,7 @@ from PIL import Image, ImageTk
 import utils
 import webbrowser
 from oxford_filenames import next_nml_name, output_name_parts
+from oxford_binning import bin_patterns, binning_geometry, emsoft_calibration
 from oxford_metadata import (
     beam_voltage_lookup_labels,
     format_beam_voltage_kv,
@@ -102,52 +103,73 @@ class TabNMLOxford(ttk.Frame):
         self.lbl_sht_status = ttk.Label(sht_frame, text="No .sht file selected or fetched.", foreground="blue")
         self.lbl_sht_status.grid(row=2, column=0, columnspan=7, sticky=tk.W, pady=(10, 0))
 
-        # 2. Grid parameters 
-        params_frame = ttk.LabelFrame(content, text="Spherical Indexing Parameters", padding=10)
+        # 2. Pattern processing
+        processing_frame = ttk.LabelFrame(
+            content, text="Pattern Processing Parameters", padding=10
+        )
+        processing_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Label(processing_frame, text="up1 Software Binning:").grid(
+            row=0, column=0, sticky=tk.W, pady=5
+        )
+        # Software binning is deliberately session-only: every application
+        # restart must begin with an unbinned (bin1) UP1 export.
+        self.var_binning = tk.StringVar(value="1")
+        self.var_binning.trace_add("write", self.on_binning_change)
+        ttk.Entry(processing_frame, textvariable=self.var_binning, width=10).grid(
+            row=0, column=1, sticky=tk.W, padx=10
+        )
+        self.lbl_binning = ttk.Label(
+            processing_frame,
+            text="Load H5OINA for output dimensions",
+            foreground="gray",
+        )
+        self.lbl_binning.grid(row=0, column=2, sticky=tk.W, padx=10)
+
+        # 3. Spherical indexing parameters
+        params_frame = ttk.LabelFrame(
+            content, text="Spherical Indexing Parameters", padding=10
+        )
         params_frame.pack(fill=tk.X, pady=10)
-        
-        ttk.Label(params_frame, text="Calculated Binning:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.lbl_binning = ttk.Label(params_frame, text="1 (Calculated from pat dims)", foreground="gray")
-        self.lbl_binning.grid(row=0, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Delta (Calculated):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Delta (Calculated):").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.var_delta = tk.StringVar(value="Unknown")
-        ttk.Entry(params_frame, textvariable=self.var_delta, width=10, state="readonly").grid(row=1, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_delta, width=10, state="readonly").grid(row=0, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Bandwidth:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Bandwidth:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.var_bw = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
-        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=2, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
         
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
-        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=2, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=1, column=2, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.var_circmask = tk.StringVar(value="-1 (Disabled)")
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
-        self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
+        self.combo_circmask.grid(row=2, column=1, sticky=tk.W, padx=10)
 
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("gausbckg", False))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=4, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nregions", 0)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=4, column=1, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=5, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("batchsize", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
         
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=8, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=7, column=0, pady=(10, 0), sticky=tk.W)
 
-        # 3. ROI Frame
+        # 4. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
         roi_frame.pack(fill=tk.X, pady=10)
         
@@ -178,7 +200,7 @@ class TabNMLOxford(ttk.Frame):
         self.var_roi_h.trace_add("write", self.on_roi_manual_edit)
         ttk.Entry(roi_frame, textvariable=self.var_roi_h, width=8).grid(row=1, column=7)
 
-        # 4. Output Names
+        # 5. Output Names
         output_frame = ttk.LabelFrame(content, text="Output Paths", padding=10)
         output_frame.pack(fill=tk.X, pady=10)
         
@@ -263,24 +285,66 @@ class TabNMLOxford(ttk.Frame):
             if bw_str.isdigit():
                 self.var_nml_name.set(f"{parts[0]}_BW{bw_str}.nml")
 
+    def on_binning_change(self, *args):
+        self._update_binning_display(update_names=True)
+
+    def _update_binning_display(self, update_names=False):
+        try:
+            geometry = binning_geometry(
+                self.state.pat_w, self.state.pat_h, int(self.var_binning.get())
+            )
+        except (TypeError, ValueError):
+            if self.state.pat_w > 0 and self.state.pat_h > 0:
+                self.lbl_binning.config(text="Enter a valid positive integer", foreground="red")
+            return None
+
+        crop_parts = []
+        if geometry.crop_left or geometry.crop_right:
+            crop_parts.append(
+                f"X crop {geometry.crop_left}+{geometry.crop_right} px"
+            )
+        if geometry.crop_top or geometry.crop_bottom:
+            crop_parts.append(
+                f"Y crop {geometry.crop_top}+{geometry.crop_bottom} px"
+            )
+        crop_text = f"; {', '.join(crop_parts)}" if crop_parts else "; no crop"
+        self.lbl_binning.config(
+            text=f"{geometry.output_width} x {geometry.output_height}{crop_text}",
+            foreground="black",
+        )
+
+        if hasattr(self.state, "native_delta"):
+            self.var_delta.set(str(self.state.native_delta * geometry.factor))
+
+        if update_names:
+            self._update_output_names(geometry.factor)
+        return geometry
+
+    def _update_output_names(self, binning=None):
+        if not self.state.h5_path or not self.state.scan_name:
+            return
+        if binning is None:
+            try:
+                binning = int(self.var_binning.get())
+            except ValueError:
+                return
+
+        map_name = getattr(self.state, 'map_name', 'Map')
+        bw = self.var_bw.get()
+        h5_dir = os.path.dirname(self.state.h5_path)
+        up1_name, _legacy_up1, nml_prefix, legacy_nml_prefix = output_name_parts(
+            self.state.h5_path, map_name, bw, binning
+        )
+        self.var_up1_name.set(up1_name)
+        self.var_nml_name.set(next_nml_name(h5_dir, nml_prefix, legacy_nml_prefix))
+
     def update_h5_data(self):
         if self.state.h5_path:
             self.var_work_dir.set(os.path.dirname(self.state.h5_path))
 
+        geometry = None
         if self.state.pat_w > 0:
-            binning = 1
-            if hasattr(self.app.tab_viewer_oxford, 'h5_file') and self.app.tab_viewer_oxford.h5_file is not None:
-                h5_file = self.app.tab_viewer_oxford.h5_file
-                if self.state.scan_name in h5_file:
-                    hdr = h5_file[self.state.scan_name]["Header"]
-                    if "Camera Binning Mode" in hdr:
-                        bin_mode = hdr["Camera Binning Mode"][0].decode('utf-8') if isinstance(hdr["Camera Binning Mode"][0], bytes) else str(hdr["Camera Binning Mode"][0])
-                        # Oxford binning usually handled inside, EMSphInx can use native_delta * binning.
-                        # Wait, we might not need to parse binning, just use 1.
-            self.lbl_binning.config(text="1 (Directly from H5)", foreground="black")
-            
-        if hasattr(self.state, 'native_delta'):
-            self.var_delta.set(str(self.state.native_delta))
+            geometry = self._update_binning_display(update_names=False)
             
         if self.state.nx > 0 and self.state.ny > 0:
             self.lbl_roi_max.config(text=f"Max Bounds: Nx={self.state.nx}, Ny={self.state.ny}")
@@ -288,26 +352,15 @@ class TabNMLOxford(ttk.Frame):
         if self.state.acc_voltage:
             self.var_kv.set(format_beam_voltage_kv(self.state.acc_voltage))
             
-        if self.state.h5_path and self.state.scan_name:
-            map_name = getattr(self.state, 'map_name', 'Map')
-            bw = self.var_bw.get()
-            h5_dir = os.path.dirname(self.state.h5_path)
-            up1_name, _legacy_up1, nml_prefix, legacy_nml_prefix = output_name_parts(
-                self.state.h5_path, map_name, bw
-            )
-
-            # New files omit the H5 map label. Legacy NML names still reserve the
-            # corresponding sequence number so an old job is never overlooked.
-            self.var_up1_name.set(up1_name)
-            self.var_nml_name.set(
-                next_nml_name(h5_dir, nml_prefix, legacy_nml_prefix)
-            )
+        if self.state.h5_path and self.state.scan_name and geometry is not None:
+            self._update_output_names(geometry.factor)
 
     def reset_defaults(self):
         try:
             with open(utils.DEFAULTS_FILE, 'r') as f:
                 defs = json.load(f)
             ox_defs = defs.get("OXFORD", {})
+            self.var_binning.set(str(ox_defs.get("binning", 1)))
             self.var_bw.set(str(ox_defs.get("bw", 123)))
             self.var_gausbckg.set(ox_defs.get("gausbckg", False))
             self.var_nregions.set(str(ox_defs.get("nregions", 0)))
@@ -453,6 +506,31 @@ class TabNMLOxford(ttk.Frame):
         if not self.state.h5_path:
             messagebox.showerror("Error", "Please load an H5OINA file in Tab 1 first.")
             return
+
+        pat_type = "Processed Patterns"
+        if hasattr(self.app.tab_viewer_oxford, 'combo_pat_type'):
+            pat_type = self.app.tab_viewer_oxford.var_pat_type.get()
+
+        try:
+            with h5py.File(
+                self.state.h5_path, 'r', swmr=True, libver='latest'
+            ) as f:
+                d_shape = f[self.state.scan_name]["Data"][pat_type].shape
+            if len(d_shape) != 3:
+                raise ValueError(
+                    f"Expected a 3D pattern dataset, found shape {d_shape}."
+                )
+            n_patterns, source_height, source_width = d_shape
+        except (KeyError, OSError, TypeError, ValueError) as e:
+            messagebox.showerror("Invalid Pattern Selection", str(e))
+            return
+
+        try:
+            binning = int(self.var_binning.get())
+            geometry = binning_geometry(source_width, source_height, binning)
+        except (TypeError, ValueError) as e:
+            messagebox.showerror("Invalid Binning", str(e))
+            return
             
         sht_paths = list(self.sht_listbox.get(0, tk.END))
         if not sht_paths:
@@ -473,7 +551,7 @@ class TabNMLOxford(ttk.Frame):
         existing_up1 = out_up1 if os.path.exists(out_up1) else None
         map_name = getattr(self.state, 'map_name', 'Map')
         clean_up1_name, legacy_up1_name, _clean_nml, _legacy_nml = output_name_parts(
-            self.state.h5_path, map_name, self.var_bw.get()
+            self.state.h5_path, map_name, self.var_bw.get(), binning
         )
         if not existing_up1 and out_up1_name == clean_up1_name:
             legacy_up1 = os.path.join(h5_dir, legacy_up1_name)
@@ -491,6 +569,38 @@ class TabNMLOxford(ttk.Frame):
             else:
                 skip_up1 = False # No, generate using the new clean name
 
+        if skip_up1:
+            try:
+                with open(out_up1, "rb") as fid:
+                    header_bytes = fid.read(16)
+                if len(header_bytes) != 16:
+                    raise ValueError("the header is incomplete")
+                _version, width, height, byte_start = struct.unpack("<4I", header_bytes)
+                if (width, height) != (
+                    geometry.output_width,
+                    geometry.output_height,
+                ):
+                    raise ValueError(
+                        f"header dimensions are {width} x {height}; expected "
+                        f"{geometry.output_width} x {geometry.output_height}"
+                    )
+                expected_size = byte_start + (
+                    n_patterns
+                    * geometry.output_width
+                    * geometry.output_height
+                )
+                actual_size = os.path.getsize(out_up1)
+                if actual_size != expected_size:
+                    raise ValueError(
+                        f"file size is {actual_size} bytes; expected {expected_size}"
+                    )
+            except (OSError, ValueError, struct.error) as e:
+                messagebox.showerror(
+                    "Incompatible UP1",
+                    f"The existing UP1 cannot be used for bin{binning}:\n{e}",
+                )
+                return
+
         if os.path.exists(out_nml):
             msg = f"The NML file already exists.\n\nDo you want to overwrite it?"
             if not messagebox.askyesno("File Exists", msg):
@@ -498,7 +608,7 @@ class TabNMLOxford(ttk.Frame):
 
         try:
             bw = int(self.var_bw.get())
-            native_delta = float(self.var_delta.get())
+            native_delta = float(self.state.native_delta)
             gausbckg = self.var_gausbckg.get()
             nthread = int(self.var_nthread.get())
             batchsize = int(self.var_batchsize.get())
@@ -506,6 +616,7 @@ class TabNMLOxford(ttk.Frame):
             nregions = int(self.var_nregions.get()) if gausbckg else 0
             
             if "OXFORD" not in self.app.params: self.app.params["OXFORD"] = {}
+            self.app.params["OXFORD"].pop("binning", None)
             self.app.params["OXFORD"]["bw"] = bw
             self.app.params["OXFORD"]["nregions"] = nregions
             self.app.params["OXFORD"]["gausbckg"] = gausbckg
@@ -516,22 +627,16 @@ class TabNMLOxford(ttk.Frame):
             messagebox.showerror("Error", "Invalid parameter formats.")
             return
 
-        pat_type = "Processed Patterns"
-        if hasattr(self.app.tab_viewer_oxford, 'combo_pat_type'):
-            pat_type = self.app.tab_viewer_oxford.var_pat_type.get()
-
-        # Calculate memory requirements for the UP1 chunk (10GB max or file size)
-        import h5py
+        # Estimate the actual peak working set of a 64 MiB input chunk. Binning
+        # adds a uint32 block-sum array and a uint8 output array, but never an
+        # interpolated or floating-point copy of the source patterns.
         req_mem = 0
         if not skip_up1:
-            try:
-                with h5py.File(self.state.h5_path, 'r', swmr=True, libver='latest') as f:
-                    d_shape = f[self.state.scan_name]["Data"][pat_type].shape
-                    bytes_per_pattern = d_shape[1] * d_shape[2]
-                    total_bytes = d_shape[0] * bytes_per_pattern
-                    req_mem = min(10 * 1024 * 1024 * 1024, total_bytes)
-            except Exception:
-                req_mem = 10 * 1024 * 1024 * 1024 # default fallback
+            bytes_per_pattern = source_height * source_width
+            total_bytes = n_patterns * bytes_per_pattern
+            input_chunk_bytes = min(64 * 1024 * 1024, total_bytes)
+            output_ratio = 1 / (binning * binning)
+            req_mem = int(input_chunk_bytes * (1 + 5 * output_ratio))
         
         active_mem = sum(t["mem"] for t in self.app.shared_state.up1_tasks.values())
         avail_mem = utils.get_available_memory()
@@ -549,10 +654,9 @@ class TabNMLOxford(ttk.Frame):
             roi_str = f"'{rx}, {ry}, {rw}, {rh}'"
             
         # Generate NML file synchronously before adding to queue
-        pcx, pcy, dd = self.state.pc
-        PC_X_Emsoft = self.state.pat_w * (pcx - 0.5)
-        PC_Y_Emsoft = self.state.pat_w * pcy - 0.5 * self.state.pat_h
-        DD_Emsoft = self.state.pat_w * dd * native_delta
+        PC_X_Emsoft, PC_Y_Emsoft, DD_Emsoft, effective_delta = emsoft_calibration(
+            self.state.pc, native_delta, geometry
+        )
 
         write_up1 = utils.to_execution_path(out_up1, self.app.config)
         master_paths = [utils.to_execution_path(p, self.app.config) for p in sht_paths]
@@ -571,7 +675,9 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Pattern Processing\n")
                 f_nml.write("!#################################################################\n")
-                f_nml.write(f" patdims    = {self.state.pat_w}, {self.state.pat_h},\n")
+                f_nml.write(
+                    f" patdims    = {geometry.output_width}, {geometry.output_height},\n"
+                )
                 
                 circmask_val = self.var_circmask.get().split()[0]
                 f_nml.write(f" circmask   = {circmask_val},\n")
@@ -582,7 +688,7 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Camera Calibration\n")
                 f_nml.write("!#################################################################\n")
-                f_nml.write(f" delta      = {native_delta},\n")
+                f_nml.write(f" delta      = {effective_delta},\n")
                 f_nml.write(f" pctr       = {PC_X_Emsoft:.6f}, {PC_Y_Emsoft:.6f}, {DD_Emsoft:.6f},\n")
                 f_nml.write(" vendor     = 'EMsoft',\n")
                 f_nml.write(" thetac     = 0.0,\n\n")
@@ -617,7 +723,8 @@ class TabNMLOxford(ttk.Frame):
             "out_nml": out_nml, "sht_paths": sht_paths, "bw": bw, "native_delta": native_delta,
             "gausbckg": gausbckg, "nregions": nregions, "nthread": nthread,
             "pc": self.state.pc, "nx": self.state.nx, "ny": self.state.ny, "step_size": self.state.step_size,
-            "roi_str": roi_str, "pat_type": pat_type, "skip_up1": skip_up1
+            "roi_str": roi_str, "pat_type": pat_type, "skip_up1": skip_up1,
+            "binning": binning
         }
         
         # Enqueue immediately
@@ -636,6 +743,8 @@ class TabNMLOxford(ttk.Frame):
             threading.Thread(target=self._worker_generate_up1, args=(out_up1, self.state.h5_path, self.state.scan_name), daemon=True).start()
 
     def _worker_generate_up1(self, out_up1, h5_path, scan_name):
+        jobs = []
+        partial_up1 = f"{out_up1}.part"
         try:
             task_info = self.app.shared_state.up1_tasks.get(out_up1, {})
             jobs = task_info.get("jobs", [])
@@ -646,20 +755,30 @@ class TabNMLOxford(ttk.Frame):
             # We assume the first job defines the pat_type and skip_up1
             pat_type = jobs[0]["pat_type"]
             skip_up1 = jobs[0]["skip_up1"]
+            binning = jobs[0]["binning"]
 
             with h5py.File(h5_path, 'r', swmr=True, libver='latest') as f:
                 d = f[scan_name]["Data"][pat_type]
                 n_patterns, pattern_height, pattern_width = d.shape
+                geometry = binning_geometry(pattern_width, pattern_height, binning)
                 
                 if not skip_up1:
                     byte_start = 16
                     up1_version = 1
-                    header = np.array([up1_version, pattern_width, pattern_height, byte_start], dtype="<u4")
+                    header = np.array(
+                        [
+                            up1_version,
+                            geometry.output_width,
+                            geometry.output_height,
+                            byte_start,
+                        ],
+                        dtype="<u4",
+                    )
                     
                     bytes_per_pattern = pattern_height * pattern_width
-                    chunk_size = max(1, (10 * 1024 * 1024) // bytes_per_pattern)  # Reduced to 10MB to yield GIL
+                    chunk_size = max(1, (64 * 1024 * 1024) // bytes_per_pattern)
                     
-                    with open(out_up1, "wb") as fid:
+                    with open(partial_up1, "wb") as fid:
                         header.tofile(fid)
                         for start_idx in range(0, n_patterns, chunk_size):
                             if self.app.tab_queue.stop_flag:
@@ -667,7 +786,7 @@ class TabNMLOxford(ttk.Frame):
                             
                             end_idx = min(start_idx + chunk_size, n_patterns)
                             patterns = d[start_idx:end_idx]
-                            patterns = np.ascontiguousarray(patterns, dtype=np.uint8)
+                            patterns = bin_patterns(patterns, geometry)
                             patterns.tofile(fid)
                             
                             pct = (end_idx / n_patterns) * 100
@@ -679,7 +798,7 @@ class TabNMLOxford(ttk.Frame):
                             
                     if self.app.tab_queue.stop_flag:
                         try:
-                            os.remove(out_up1)
+                            os.remove(partial_up1)
                         except Exception:
                             pass
                         
@@ -690,6 +809,7 @@ class TabNMLOxford(ttk.Frame):
                         if out_up1 in self.app.shared_state.up1_tasks:
                             del self.app.shared_state.up1_tasks[out_up1]
                         return
+                    os.replace(partial_up1, out_up1)
                 else:
                     self.app.root.after(0, self.lbl_progress.config, {"text": "Skipped UP1 generation."})
             
@@ -704,5 +824,20 @@ class TabNMLOxford(ttk.Frame):
             self.app.root.after(0, self.lbl_progress.config, {"text": "Done! Jobs are now Pending."})
 
         except Exception as e:
+            try:
+                if os.path.exists(partial_up1):
+                    os.remove(partial_up1)
+            except OSError:
+                pass
+            for job in jobs:
+                self.app.root.after(
+                    0,
+                    self.app.tab_queue.safe_tree_update,
+                    job["item_id"],
+                    "status",
+                    "Error",
+                )
+            if out_up1 in self.app.shared_state.up1_tasks:
+                del self.app.shared_state.up1_tasks[out_up1]
             self.app.root.after(0, messagebox.showerror, "Generation Error", f"Failed to generate UP1/NML:\n{e}")
             self.app.root.after(0, self.lbl_progress.config, {"text": "Error occurred."})

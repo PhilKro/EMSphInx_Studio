@@ -76,7 +76,7 @@ class TabViewerOxford(ttk.Frame):
         self.var_pat_type = tk.StringVar(value="Processed Patterns")
         self.combo_pat_type = ttk.Combobox(lf_files, textvariable=self.var_pat_type, state="readonly")
         self.combo_pat_type.pack(fill=tk.X, pady=(0, 5))
-        self.combo_pat_type.bind("<<ComboboxSelected>>", lambda e: self.update_pattern_image())
+        self.combo_pat_type.bind("<<ComboboxSelected>>", self.on_pattern_type_select)
         
         self.var_pat_row_major = tk.BooleanVar(value=True)
         ttk.Checkbutton(lf_files, text="Pattern Pixel Read: Row-Major", variable=self.var_pat_row_major, command=self.on_row_major_toggle).pack(anchor=tk.W, pady=(10, 0))
@@ -287,6 +287,23 @@ class TabViewerOxford(ttk.Frame):
     def on_row_major_toggle(self):
         if self.h5_file is not None:
             self.init_viewer()
+
+    def on_pattern_type_select(self, event=None):
+        if self.h5_file is None or not self.state.scan_name:
+            return
+        try:
+            dataset = self.h5_file[self.state.scan_name]["Data"][
+                self.var_pat_type.get()
+            ]
+            self.state.pat_h, self.state.pat_w = dataset.shape[-2:]
+            self.lbl_pat_dims.config(
+                text=f"Pattern Dims: {self.state.pat_w} x {self.state.pat_h}"
+            )
+            if hasattr(self.app, 'tab_nml_oxford'):
+                self.app.tab_nml_oxford.update_h5_data()
+            self.update_pattern_image()
+        except (KeyError, ValueError) as e:
+            messagebox.showerror("Pattern Selection Error", str(e))
 
     def init_viewer(self):
         if not self.state.h5_path or self.h5_file is None:

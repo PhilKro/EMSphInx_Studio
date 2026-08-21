@@ -85,7 +85,7 @@ Data, SHT, output, and NML paths are passed directly to `IndexEBSD` as native ab
 3. Select or fetch SHT master patterns and generate the NML in the NML Builder.
 4. Start the queue and monitor the live `IndexEBSD` output.
 
-Oxford `.h5oina` patterns are unpacked asynchronously to `.up1` because direct indexing of the packed source has proved unreliable. The writer batches large datasets according to available memory.
+Oxford `.h5oina` patterns are unpacked asynchronously to `.up1` because direct indexing of the packed source has proved unreliable. Optional integer binning uses fast block averaging without interpolation. Non-divisible dimensions are center-cropped first, and the generated NML uses the corresponding output dimensions, effective pixel size, and corrected pattern center. The writer processes large datasets in bounded chunks.
 
 ## Moving jobs between platforms
 

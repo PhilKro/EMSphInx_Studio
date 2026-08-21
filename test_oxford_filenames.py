@@ -16,6 +16,13 @@ class OxfordFilenameTests(unittest.TestCase):
         self.assertEqual(names[2], "Cu_Al_NSs Cu Ref AD Site 1 Map Data 1_BW123")
         self.assertEqual(names[1], "Cu_Al_NSs Cu Ref AD Site 1 Map Data 1_Map_Data_1.up1")
 
+    def test_binning_is_reported_in_both_output_names(self):
+        names = output_name_parts("/data/sample.h5oina", "Map_Data_1", 123, 2)
+        self.assertEqual(names[0], "sample_bin2.up1")
+        self.assertEqual(names[1], "sample_Map_Data_1_bin2.up1")
+        self.assertEqual(names[2], "sample_bin2_BW123")
+        self.assertEqual(names[3], "sample_Map_Data_1_bin2_BW123")
+
     def test_legacy_nml_names_are_included_when_incrementing(self):
         with tempfile.TemporaryDirectory() as directory:
             legacy = os.path.join(directory, "sample_Map_Data_1_BW123_3.nml")
