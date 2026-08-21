@@ -23,6 +23,7 @@ class TabViewerEdax(ttk.Frame):
         self.current_raw_image = None
         self.tk_img_pattern = None
         self.tk_img_map = None
+        self.current_map_image = None
         self.map_data_2d = None 
         self.map_canvas_img_item = None
         self.map_cursor_item = None
@@ -31,6 +32,7 @@ class TabViewerEdax(ttk.Frame):
         
         self.roi_start_x = 0
         self.roi_start_y = 0
+        self.roi_drag_active = False
         
         self._setup_ui()
 
@@ -127,6 +129,7 @@ class TabViewerEdax(ttk.Frame):
         self.map_canvas.bind("<Shift-ButtonPress-1>", self.on_roi_press)
         self.map_canvas.bind("<Shift-B1-Motion>", self.on_roi_drag)
         self.map_canvas.bind("<Shift-ButtonRelease-1>", self.on_roi_release)
+        self.map_canvas.bind("<Configure>", self.on_map_canvas_resize)
         
         map_grid.rowconfigure(1, weight=1)
         map_grid.columnconfigure(1, weight=1)
@@ -315,27 +318,30 @@ class TabViewerEdax(ttk.Frame):
         self.draw_roi_from_state()
 
     def draw_map_image(self, img_pil):
-        self.map_canvas.update_idletasks()
+        self.current_map_image = img_pil
         cw, ch = self.map_canvas.winfo_width(), self.map_canvas.winfo_height()
-        if cw < 10: cw, ch = 350, 350
-        
-        img_aspect = img_pil.width / img_pil.height
-        canvas_aspect = cw / ch
-        
-        if img_aspect > canvas_aspect:
-            new_w = cw
-            new_h = max(1, int(cw / img_aspect))
-        else:
-            new_h = ch
-            new_w = max(1, int(ch * img_aspect))
-            
+        new_w, new_h, self.map_offset_x, self.map_offset_y = utils.centered_fit_geometry(
+            img_pil.width, img_pil.height, max(1, cw), max(1, ch)
+        )
         self.map_scale_x, self.map_scale_y = new_w / img_pil.width, new_h / img_pil.height
         self.tk_img_map = ImageTk.PhotoImage(img_pil.resize((new_w, new_h), Image.Resampling.NEAREST))
         
         if getattr(self, 'map_canvas_img_item', None) is None:
-            self.map_canvas_img_item = self.map_canvas.create_image(0, 0, image=self.tk_img_map, anchor=tk.NW)
+            self.map_canvas_img_item = self.map_canvas.create_image(
+                self.map_offset_x, self.map_offset_y, image=self.tk_img_map, anchor=tk.NW
+            )
         else:
             self.map_canvas.itemconfig(self.map_canvas_img_item, image=self.tk_img_map)
+            self.map_canvas.coords(
+                self.map_canvas_img_item, self.map_offset_x, self.map_offset_y
+            )
+
+    def on_map_canvas_resize(self, event):
+        if self.current_map_image is None:
+            return
+        self.draw_map_image(self.current_map_image)
+        self.update_map_cursor()
+        self.draw_roi_from_state()
 
     def refresh_view(self):
         if self.mmap is not None: self.update_pattern_image()
@@ -350,8 +356,13 @@ class TabViewerEdax(ttk.Frame):
         if self.map_data_2d is not None: self.update_xy_from_click(event.x, event.y)
 
     def update_xy_from_click(self, cx, cy):
-        grid_x = max(0, min(self.state.nx - 1, int(cx / self.map_scale_x)))
-        grid_y = max(0, min(self.state.ny - 1, int(cy / self.map_scale_y)))
+        grid_point = utils.canvas_to_grid_point(
+            cx, cy, self.map_offset_x, self.map_offset_y,
+            self.map_scale_x, self.map_scale_y, self.state.nx, self.state.ny,
+        )
+        if grid_point is None:
+            return
+        grid_x, grid_y = grid_point
         self.var_x.set(grid_x); self.var_y.set(grid_y)
         if self.mmap is not None:
             self.update_pattern_image()
@@ -373,8 +384,10 @@ class TabViewerEdax(ttk.Frame):
         w = max(1, min(self.state.nx - x0, w))
         h = max(1, min(self.state.ny - y0, h))
         
-        x1, y1 = x0 * self.map_scale_x, y0 * self.map_scale_y
-        x2, y2 = (x0 + w) * self.map_scale_x, (y0 + h) * self.map_scale_y
+        x1 = self.map_offset_x + x0 * self.map_scale_x
+        y1 = self.map_offset_y + y0 * self.map_scale_y
+        x2 = self.map_offset_x + (x0 + w) * self.map_scale_x
+        y2 = self.map_offset_y + (y0 + h) * self.map_scale_y
         
         if getattr(self, 'roi_canvas_item', None):
             self.map_canvas.coords(self.roi_canvas_item, x1, y1, x2, y2)
@@ -391,26 +404,39 @@ class TabViewerEdax(ttk.Frame):
 
     def on_roi_press(self, event):
         if self.map_data_2d is None: return
-        self.roi_start_x = event.x
-        self.roi_start_y = event.y
+        self.roi_drag_active = False
+        if utils.canvas_to_grid_point(
+            event.x, event.y, self.map_offset_x, self.map_offset_y,
+            self.map_scale_x, self.map_scale_y, self.state.nx, self.state.ny,
+        ) is None:
+            return
+        map_width = self.state.nx * self.map_scale_x
+        map_height = self.state.ny * self.map_scale_y
+        self.roi_start_x, self.roi_start_y = utils.clamp_canvas_point(
+            event.x, event.y, self.map_offset_x, self.map_offset_y,
+            map_width, map_height,
+        )
+        self.roi_drag_active = True
         if getattr(self, 'roi_canvas_item', None):
             self.map_canvas.delete(self.roi_canvas_item)
         self.roi_canvas_item = self.map_canvas.create_rectangle(self.roi_start_x, self.roi_start_y, event.x, event.y, outline='cyan', width=2, dash=(4, 4))
 
     def on_roi_drag(self, event):
-        if self.roi_canvas_item:
-            self.map_canvas.coords(self.roi_canvas_item, self.roi_start_x, self.roi_start_y, event.x, event.y)
+        if self.roi_drag_active and self.roi_canvas_item:
+            end_x, end_y = utils.clamp_canvas_point(
+                event.x, event.y, self.map_offset_x, self.map_offset_y,
+                self.state.nx * self.map_scale_x, self.state.ny * self.map_scale_y,
+            )
+            self.map_canvas.coords(self.roi_canvas_item, self.roi_start_x, self.roi_start_y, end_x, end_y)
 
     def on_roi_release(self, event):
-        if not self.roi_canvas_item: return
-        x1, y1 = self.roi_start_x / self.map_scale_x, self.roi_start_y / self.map_scale_y
-        x2, y2 = event.x / self.map_scale_x, event.y / self.map_scale_y
-        grid_x1, grid_x2 = sorted([x1, x2])
-        grid_y1, grid_y2 = sorted([y1, y2])
-        gx0 = max(0, min(self.state.nx - 1, int(grid_x1)))
-        gy0 = max(0, min(self.state.ny - 1, int(grid_y1)))
-        gw = max(1, min(self.state.nx - gx0, int(grid_x2 - grid_x1 + 0.5)))
-        gh = max(1, min(self.state.ny - gy0, int(grid_y2 - grid_y1 + 0.5)))
+        if not self.roi_drag_active or not self.roi_canvas_item: return
+        self.roi_drag_active = False
+        gx0, gy0, gw, gh = utils.canvas_roi_to_grid(
+            self.roi_start_x, self.roi_start_y, event.x, event.y,
+            self.map_offset_x, self.map_offset_y,
+            self.map_scale_x, self.map_scale_y, self.state.nx, self.state.ny,
+        )
 
         if gw > 0 and gh > 0:
             self.state.roi = (gx0, gy0, gw, gh)
@@ -444,12 +470,7 @@ class TabViewerEdax(ttk.Frame):
         if not current_lbl.startswith("ROI Mapped"):
             self.lbl_pos.config(text=f"X: {x}   |   Y: {y}   |   Pattern #: {idx}")
         
-        rect_x1, rect_y1 = x * self.map_scale_x, y * self.map_scale_y
-        rect_x2, rect_y2 = (x + 1) * self.map_scale_x, (y + 1) * self.map_scale_y
-        if self.map_cursor_item is None:
-            self.map_cursor_item = self.map_canvas.create_rectangle(rect_x1, rect_y1, rect_x2, rect_y2, outline='red', width=2)
-        else:
-            self.map_canvas.coords(self.map_cursor_item, rect_x1, rect_y1, rect_x2, rect_y2)
+        self.update_map_cursor(x, y)
 
         raw_1d = self.mmap[idx]
         pat_2d = raw_1d.reshape((self.state.pat_h, self.state.pat_w), order='C' if self.var_pat_row_major.get() else 'F')
@@ -462,11 +483,36 @@ class TabViewerEdax(ttk.Frame):
             self.current_raw_image = Image.fromarray(pat_2d, mode='L')
         self.draw_pat_canvas()
 
+    def update_map_cursor(self, x=None, y=None):
+        if not hasattr(self, 'map_scale_x'):
+            return
+        if x is None:
+            x = int(round(self.var_x.get()))
+        if y is None:
+            y = int(round(self.var_y.get()))
+        rect_x1 = self.map_offset_x + x * self.map_scale_x
+        rect_y1 = self.map_offset_y + y * self.map_scale_y
+        rect_x2 = self.map_offset_x + (x + 1) * self.map_scale_x
+        rect_y2 = self.map_offset_y + (y + 1) * self.map_scale_y
+        if self.map_cursor_item is None:
+            self.map_cursor_item = self.map_canvas.create_rectangle(rect_x1, rect_y1, rect_x2, rect_y2, outline='red', width=2)
+        else:
+            self.map_canvas.coords(self.map_cursor_item, rect_x1, rect_y1, rect_x2, rect_y2)
+
     def draw_pat_canvas(self):
         if self.current_raw_image is None: return
-        disp_size = max(350, min(self.pat_canvas.winfo_width(), self.pat_canvas.winfo_height()))
-        self.tk_img_pattern = ImageTk.PhotoImage(self.current_raw_image.resize((disp_size, disp_size), Image.Resampling.LANCZOS))
-        cx, cy = self.pat_canvas.winfo_width()//2, self.pat_canvas.winfo_height()//2
+        canvas_width = self.pat_canvas.winfo_width()
+        canvas_height = self.pat_canvas.winfo_height()
+        display_size = utils.fit_dimensions(
+            self.current_raw_image.width,
+            self.current_raw_image.height,
+            canvas_width,
+            canvas_height,
+        )
+        self.tk_img_pattern = ImageTk.PhotoImage(
+            self.current_raw_image.resize(display_size, Image.Resampling.LANCZOS)
+        )
+        cx, cy = canvas_width // 2, canvas_height // 2
         if self.pat_canvas_img_item is None:
             self.pat_canvas_img_item = self.pat_canvas.create_image(cx, cy, image=self.tk_img_pattern, anchor=tk.CENTER)
         else:

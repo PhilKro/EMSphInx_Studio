@@ -367,6 +367,69 @@ def parse_nml_string(value):
     """Decode the contents of a Fortran single-quoted string literal."""
     return value.replace("''", "'")
 
+
+def fit_dimensions(source_width, source_height, available_width, available_height):
+    """Scale dimensions to fit a box without changing the aspect ratio."""
+    if min(source_width, source_height, available_width, available_height) <= 0:
+        return 1, 1
+    scale = min(available_width / source_width, available_height / source_height)
+    return (
+        max(1, int(source_width * scale)),
+        max(1, int(source_height * scale)),
+    )
+
+
+def centered_fit_geometry(source_width, source_height, available_width, available_height):
+    """Return fitted width/height and the offsets needed to center them."""
+    width, height = fit_dimensions(
+        source_width, source_height, available_width, available_height
+    )
+    return width, height, (available_width - width) / 2, (available_height - height) / 2
+
+
+def canvas_to_grid_point(canvas_x, canvas_y, offset_x, offset_y, scale_x, scale_y, nx, ny):
+    """Map a canvas point to a grid cell, or None when it is outside the map."""
+    local_x = canvas_x - offset_x
+    local_y = canvas_y - offset_y
+    if scale_x <= 0 or scale_y <= 0:
+        return None
+    if local_x < 0 or local_y < 0 or local_x >= nx * scale_x or local_y >= ny * scale_y:
+        return None
+    return int(local_x / scale_x), int(local_y / scale_y)
+
+
+def clamp_canvas_point(canvas_x, canvas_y, offset_x, offset_y, width, height):
+    """Clamp a canvas point to the displayed map rectangle."""
+    return (
+        max(offset_x, min(offset_x + width, canvas_x)),
+        max(offset_y, min(offset_y + height, canvas_y)),
+    )
+
+
+def canvas_roi_to_grid(start_x, start_y, end_x, end_y,
+                       offset_x, offset_y, scale_x, scale_y, nx, ny):
+    """Convert a canvas ROI to the bounded grid ROI used by the NML."""
+    map_width = nx * scale_x
+    map_height = ny * scale_y
+    start_x, start_y = clamp_canvas_point(
+        start_x, start_y, offset_x, offset_y, map_width, map_height
+    )
+    end_x, end_y = clamp_canvas_point(
+        end_x, end_y, offset_x, offset_y, map_width, map_height
+    )
+    grid_x1 = (start_x - offset_x) / scale_x
+    grid_y1 = (start_y - offset_y) / scale_y
+    grid_x2 = (end_x - offset_x) / scale_x
+    grid_y2 = (end_y - offset_y) / scale_y
+    grid_x1, grid_x2 = sorted((grid_x1, grid_x2))
+    grid_y1, grid_y2 = sorted((grid_y1, grid_y2))
+    x0 = max(0, min(nx - 1, int(grid_x1)))
+    y0 = max(0, min(ny - 1, int(grid_y1)))
+    width = max(1, min(nx - x0, int(grid_x2 - grid_x1 + 0.5)))
+    height = max(1, min(ny - y0, int(grid_y2 - grid_y1 + 0.5)))
+    return x0, y0, width, height
+
+
 def sanitize_sht_filename(filename):
     name, ext = os.path.splitext(filename)
     clean_name = re.sub(r'[\s\(\)\[\]\{\}]+', '_', name)

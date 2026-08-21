@@ -537,5 +537,6 @@ class TabNMLBuilderEdax(ttk.Frame):
 
             self.app.tab_queue.add_job(self.state.scan_name, out_nml)
             self.app.notebook.select(self.app.tab_queue)
+            self.app.tab_queue.start_queue()
         except Exception as e:
             messagebox.showerror("NML Error", f"Failed to write NML file:\n{e}")

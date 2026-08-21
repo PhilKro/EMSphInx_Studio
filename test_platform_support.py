@@ -21,6 +21,44 @@ except ModuleNotFoundError:
 import utils
 
 
+class ImageSizingTests(unittest.TestCase):
+    def test_rectangular_image_fits_without_changing_aspect_ratio(self):
+        self.assertEqual(utils.fit_dimensions(640, 480, 400, 400), (400, 300))
+        self.assertEqual(utils.fit_dimensions(480, 640, 400, 400), (300, 400))
+
+    def test_image_is_limited_by_both_canvas_dimensions(self):
+        self.assertEqual(utils.fit_dimensions(640, 480, 300, 500), (300, 225))
+
+    def test_fitted_image_is_centered_in_unused_canvas_space(self):
+        self.assertEqual(
+            utils.centered_fit_geometry(200, 100, 500, 500),
+            (500, 250, 0, 125),
+        )
+
+    def test_canvas_selection_accounts_for_centering_offsets(self):
+        geometry = (115, 55, 100, 50, 10, 10, 2, 1)
+        self.assertEqual(utils.canvas_to_grid_point(*geometry), (1, 0))
+        self.assertIsNone(
+            utils.canvas_to_grid_point(50, 50, 100, 50, 10, 10, 2, 1)
+        )
+
+    def test_roi_points_are_clamped_to_displayed_map(self):
+        self.assertEqual(
+            utils.clamp_canvas_point(50, 400, 100, 125, 500, 250),
+            (100, 375),
+        )
+
+    def test_canvas_roi_accounts_for_offsets_and_reverse_dragging(self):
+        forward = utils.canvas_roi_to_grid(
+            115, 65, 145, 85, 100, 50, 10, 10, 20, 10
+        )
+        reverse = utils.canvas_roi_to_grid(
+            145, 85, 115, 65, 100, 50, 10, 10, 20, 10
+        )
+        self.assertEqual(forward, (1, 1, 3, 2))
+        self.assertEqual(reverse, forward)
+
+
 class NativeExecutionTests(unittest.TestCase):
     def test_native_paths_are_absolute_and_unchanged(self):
         with mock.patch("utils.uses_wsl", return_value=False):
