@@ -52,8 +52,18 @@ class TabQueue(ttk.Frame):
         console_frame = ttk.LabelFrame(self, text="EMsoft Output Console", padding=10)
         console_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.txt_console = tk.Text(console_frame, bg="black", fg="lime green", height=10, state=tk.DISABLED)
-        self.txt_console.pack(fill=tk.BOTH, expand=True)
+        console_scrollbar = ttk.Scrollbar(console_frame, orient=tk.VERTICAL)
+        console_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt_console = tk.Text(
+            console_frame,
+            bg="black",
+            fg="lime green",
+            height=10,
+            state=tk.DISABLED,
+            yscrollcommand=console_scrollbar.set,
+        )
+        self.txt_console.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        console_scrollbar.config(command=self.txt_console.yview)
 
     def add_job(self, scan_target, nml_path, status="Pending"):
         item_id = self.tree.insert("", tk.END, values=(status, scan_target, nml_path))
@@ -133,6 +143,10 @@ class TabQueue(ttk.Frame):
         self.lbl_queue_progress.config(text=f"Job {current} / {total}")
 
     def append_console(self, text, is_progress=False):
+        # Keep following live output only while the user is already at the end.
+        # Calling see(END) unconditionally makes it impossible to inspect older
+        # output while progress updates replace the last console line.
+        should_follow_output = self.txt_console.yview()[1] >= 0.999
         self.txt_console.config(state=tk.NORMAL)
         text_to_insert = text.strip()
         
@@ -142,7 +156,8 @@ class TabQueue(ttk.Frame):
         else:
             self.txt_console.insert(tk.END, text_to_insert + "\n")
             
-        self.txt_console.see(tk.END)
+        if should_follow_output:
+            self.txt_console.see(tk.END)
         self.txt_console.config(state=tk.DISABLED)
         self.last_was_progress = is_progress
 
