@@ -17,6 +17,7 @@ import shutil
 from PIL import Image, ImageTk
 import utils
 import webbrowser
+from oxford_filenames import next_nml_name, output_name_parts
 
 try:
     import matplotlib.cm as cm
@@ -283,37 +284,19 @@ class TabNMLOxford(ttk.Frame):
             self.var_kv.set(str(int(self.state.acc_voltage)))
             
         if self.state.h5_path and self.state.scan_name:
-            import glob
-            basename = os.path.splitext(os.path.basename(self.state.h5_path))[0]
             map_name = getattr(self.state, 'map_name', 'Map')
             bw = self.var_bw.get()
-            
-            # UP1 Naming
-            up1_name = f"{basename}_{map_name}.up1"
-            self.var_up1_name.set(up1_name)
-            
-            # NML Naming (increment integer if exists)
-            base_nml_prefix = f"{basename}_{map_name}_BW{bw}"
             h5_dir = os.path.dirname(self.state.h5_path)
-            
-            # Check existing to increment
-            existing_nmls = glob.glob(os.path.join(h5_dir, f"{base_nml_prefix}*.nml"))
-            if not existing_nmls:
-                final_nml = f"{base_nml_prefix}.nml"
-            else:
-                max_idx = 0
-                import re
-                pattern = re.compile(re.escape(base_nml_prefix) + r'_(\d+)\.nml$')
-                for f in existing_nmls:
-                    fname = os.path.basename(f)
-                    if fname == f"{base_nml_prefix}.nml":
-                        continue
-                    match = pattern.search(fname)
-                    if match:
-                        max_idx = max(max_idx, int(match.group(1)))
-                final_nml = f"{base_nml_prefix}_{max_idx + 1}.nml"
-                
-            self.var_nml_name.set(final_nml)
+            up1_name, _legacy_up1, nml_prefix, legacy_nml_prefix = output_name_parts(
+                self.state.h5_path, map_name, bw
+            )
+
+            # New files omit the H5 map label. Legacy NML names still reserve the
+            # corresponding sequence number so an old job is never overlooked.
+            self.var_up1_name.set(up1_name)
+            self.var_nml_name.set(
+                next_nml_name(h5_dir, nml_prefix, legacy_nml_prefix)
+            )
 
     def reset_defaults(self):
         try:
@@ -475,15 +458,26 @@ class TabNMLOxford(ttk.Frame):
         out_up1 = os.path.join(h5_dir, out_up1_name)
 
         skip_up1 = False
-        if os.path.exists(out_up1):
-            msg = f"The UP1 file already exists:\n{out_up1}\n\nDo you want to use the existing file (Yes) or overwrite and generate a new one (No)?"
+        existing_up1 = out_up1 if os.path.exists(out_up1) else None
+        map_name = getattr(self.state, 'map_name', 'Map')
+        clean_up1_name, legacy_up1_name, _clean_nml, _legacy_nml = output_name_parts(
+            self.state.h5_path, map_name, self.var_bw.get()
+        )
+        if not existing_up1 and out_up1_name == clean_up1_name:
+            legacy_up1 = os.path.join(h5_dir, legacy_up1_name)
+            if legacy_up1 != out_up1 and os.path.exists(legacy_up1):
+                existing_up1 = legacy_up1
+
+        if existing_up1:
+            msg = f"The UP1 file already exists:\n{existing_up1}\n\nDo you want to use the existing file (Yes) or generate a new one (No)?"
             ans = messagebox.askyesnocancel("UP1 Exists", msg)
             if ans is None:
                 return # Cancelled
             elif ans:
                 skip_up1 = True # Yes, use existing
+                out_up1 = existing_up1
             else:
-                skip_up1 = False # No, overwrite
+                skip_up1 = False # No, generate using the new clean name
 
         if os.path.exists(out_nml):
             msg = f"The NML file already exists.\n\nDo you want to overwrite it?"
