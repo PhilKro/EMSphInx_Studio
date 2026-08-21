@@ -16,6 +16,7 @@ import json
 import shutil
 from PIL import Image, ImageTk
 import utils
+from oxford_metadata import normalize_beam_voltage_kv, normalize_step_size_um
 
 try:
     import matplotlib.cm as cm
@@ -172,8 +173,12 @@ class TabViewerOxford(ttk.Frame):
                         
                         nx = int(utils.get_h5_scalar(header["X Cells"]))
                         ny = int(utils.get_h5_scalar(header["Y Cells"]))
-                        step = float(utils.get_h5_scalar(header["X Step"]))
-                        kv = float(utils.get_h5_scalar(header.get("Beam Voltage", 20.0)))
+                        step = normalize_step_size_um(
+                            utils.get_h5_scalar(header["X Step"])
+                        )
+                        kv = normalize_beam_voltage_kv(
+                            utils.get_h5_scalar(header.get("Beam Voltage", 20.0))
+                        )
                         
                         pcx = float(np.mean(data["Pattern Center X"][()]))
                         pcy = float(np.mean(data["Pattern Center Y"][()]))
@@ -503,4 +508,3 @@ class TabViewerOxford(ttk.Frame):
 
     def on_pat_canvas_resize(self, event):
         self.draw_pat_canvas()
-

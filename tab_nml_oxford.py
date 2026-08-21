@@ -18,6 +18,11 @@ from PIL import Image, ImageTk
 import utils
 import webbrowser
 from oxford_filenames import next_nml_name, output_name_parts
+from oxford_metadata import (
+    beam_voltage_lookup_labels,
+    format_beam_voltage_kv,
+    format_step_size_um,
+)
 
 try:
     import matplotlib.cm as cm
@@ -281,7 +286,7 @@ class TabNMLOxford(ttk.Frame):
             self.lbl_roi_max.config(text=f"Max Bounds: Nx={self.state.nx}, Ny={self.state.ny}")
         
         if self.state.acc_voltage:
-            self.var_kv.set(str(int(self.state.acc_voltage)))
+            self.var_kv.set(format_beam_voltage_kv(self.state.acc_voltage))
             
         if self.state.h5_path and self.state.scan_name:
             map_name = getattr(self.state, 'map_name', 'Map')
@@ -366,14 +371,21 @@ class TabNMLOxford(ttk.Frame):
             messagebox.showwarning("Missing Data", "Please fill in Element, Structure, and kV.")
             return
             
-        tokens = [element, struct_type, f"{{{kv}kv}}".lower()]
+        try:
+            kv_labels = beam_voltage_lookup_labels(kv)
+        except ValueError:
+            messagebox.showwarning("Invalid Data", "Beam voltage must be numeric.")
+            return
+
+        kv_tokens = tuple(f"{{{label}kv}}".lower() for label in kv_labels)
+        tokens = [element, struct_type, " or ".join(kv_tokens)]
         local_dir = os.path.join(utils.SCRIPT_DIR, self.app.config.get("sht_library_dir", "SHT_Library"))
         os.makedirs(local_dir, exist_ok=True)
         
         for local_file in os.listdir(local_dir):
             if local_file.endswith('.sht'):
                 parts = local_file.split(' ')
-                if parts[0].lower() == element and struct_type in local_file.lower() and f"{{{kv}kv}}".lower() in local_file.lower():
+                if parts[0].lower() == element and struct_type in local_file.lower() and any(token in local_file.lower() for token in kv_tokens):
                     local_path = os.path.join(local_dir, local_file)
                     clean_name = utils.sanitize_sht_filename(local_file)
                     clean_path = os.path.join(local_dir, clean_name)
@@ -399,7 +411,7 @@ class TabNMLOxford(ttk.Frame):
                 if path.endswith('.sht'):
                     basename = os.path.basename(path)
                     parts = basename.split(' ')
-                    if parts[0].lower() == element and struct_type in basename.lower() and f"{{{kv}kv}}".lower() in basename.lower():
+                    if parts[0].lower() == element and struct_type in basename.lower() and any(token in basename.lower() for token in kv_tokens):
                         safe_path = urllib.parse.quote(path)
                         file_url = f"https://raw.githubusercontent.com/EMsoft-org/SHTdatabase/master/{safe_path}"
                         found_name = os.path.basename(path)
@@ -577,7 +589,8 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Scan Information\n")
                 f_nml.write("!#################################################################\n")
-                f_nml.write(f" scandims   = {self.state.nx}, {self.state.ny}, {self.state.step_size},\n")
+                step_size = format_step_size_um(self.state.step_size)
+                f_nml.write(f" scandims   = {self.state.nx}, {self.state.ny}, {step_size},\n")
                 f_nml.write(f" roimask    = {roi_str},\n\n")
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Indexing Parameters\n")
