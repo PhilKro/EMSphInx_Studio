@@ -166,8 +166,15 @@ class TabNMLOxford(ttk.Frame):
         ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("batchsize", 0)))
         ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+
+        self.var_refine = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("refine", True))
+        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
+
+        self.var_normed = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("normed", False))
+        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=8, column=2, sticky=tk.W, padx=10)
         
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=7, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=9, column=0, pady=(10, 0), sticky=tk.W)
 
         # 4. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
@@ -366,6 +373,8 @@ class TabNMLOxford(ttk.Frame):
             self.var_nregions.set(str(ox_defs.get("nregions", 0)))
             self.var_nthread.set(str(ox_defs.get("nthread", 0)))
             self.var_batchsize.set(str(ox_defs.get("batchsize", 0)))
+            self.var_refine.set(ox_defs.get("refine", True))
+            self.var_normed.set(ox_defs.get("normed", False))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load defaults:\n{e}")
 
@@ -612,6 +621,8 @@ class TabNMLOxford(ttk.Frame):
             gausbckg = self.var_gausbckg.get()
             nthread = int(self.var_nthread.get())
             batchsize = int(self.var_batchsize.get())
+            refine = self.var_refine.get()
+            normed = self.var_normed.get()
             
             nregions = int(self.var_nregions.get()) if gausbckg else 0
             
@@ -622,6 +633,8 @@ class TabNMLOxford(ttk.Frame):
             self.app.params["OXFORD"]["gausbckg"] = gausbckg
             self.app.params["OXFORD"]["nthread"] = nthread
             self.app.params["OXFORD"]["batchsize"] = batchsize
+            self.app.params["OXFORD"]["refine"] = refine
+            self.app.params["OXFORD"]["normed"] = normed
             utils.save_json(utils.PARAMS_FILE, self.app.params)
         except ValueError:
             messagebox.showerror("Error", "Invalid parameter formats.")
@@ -702,8 +715,8 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write("! Indexing Parameters\n")
                 f_nml.write("!#################################################################\n")
                 f_nml.write(f" bw         = {bw},\n")
-                f_nml.write(" normed     = .FALSE.,\n")
-                f_nml.write(" refine     = .TRUE.,\n")
+                f_nml.write(f" normed     = {'.TRUE.' if normed else '.FALSE.'},\n")
+                f_nml.write(f" refine     = {'.TRUE.' if refine else '.FALSE.'},\n")
                 f_nml.write(f" nthread    = {nthread},\n")
                 f_nml.write(f" batchsize  = {batchsize},\n\n")
                 f_nml.write("!#################################################################\n")

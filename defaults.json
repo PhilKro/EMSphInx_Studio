@@ -7,7 +7,9 @@
         "bw": 123,
         "native_delta": 23.0,
         "nthread": 0,
-        "batchsize": 0
+        "batchsize": 0,
+        "refine": true,
+        "normed": false
     },
     "EDAX": {
         "gausbckg": true,
@@ -15,6 +17,8 @@
         "bw": 123,
         "native_delta": 23.0,
         "nthread": 0,
-        "batchsize": 0
+        "batchsize": 0,
+        "refine": true,
+        "normed": false
     }
 }

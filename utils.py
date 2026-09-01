@@ -120,7 +120,9 @@ DEFAULT_PARAMS = {
         "nregions": 0,
         "bw": 123,
         "nthread": 0,
-        "batchsize": 0
+        "batchsize": 0,
+        "refine": True,
+        "normed": False
     },
     "EDAX": {
         "gausbckg": True,
@@ -128,7 +130,9 @@ DEFAULT_PARAMS = {
         "bw": 123,
         "native_delta": 23.0,
         "nthread": 0,
-        "batchsize": 0
+        "batchsize": 0,
+        "refine": True,
+        "normed": False
     }
 }
 
