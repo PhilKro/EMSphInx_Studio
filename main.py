@@ -218,7 +218,7 @@ class EMSphInxGUI:
         frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         ttk.Label(
             frame,
-            text="Folder containing the compiled IndexEBSD executable:",
+            text="EMSphInx executable folder (browse to select IndexEBSD):",
         ).grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 8))
 
         var_native_dir = tk.StringVar(value=self.config.get("native_executable_dir", ""))
@@ -226,13 +226,14 @@ class EMSphInxGUI:
         entry.grid(row=1, column=0, sticky=tk.EW, padx=(0, 8))
 
         def browse():
-            selected = filedialog.askdirectory(
+            selected = filedialog.askopenfilename(
                 parent=top,
                 initialdir=var_native_dir.get() or os.getcwd(),
-                title="Select the folder containing IndexEBSD",
+                title="Select the IndexEBSD executable",
+                filetypes=[("IndexEBSD executable", "IndexEBSD"), ("All files", "*")],
             )
             if selected:
-                var_native_dir.set(selected)
+                var_native_dir.set(os.path.dirname(selected))
 
         ttk.Button(frame, text="Browse…", command=browse).grid(row=1, column=1)
         ttk.Label(
@@ -270,20 +271,41 @@ class EMSphInxGUI:
     def configure_wsl(self, is_first_setup=False):
         top = tk.Toplevel(self.root)
         top.title("WSL Configuration & Mounts")
-        top.geometry("600x450")
+        top.geometry("700x520")
         top.transient(self.root)
         top.grab_set()
 
         cfg_frame = ttk.LabelFrame(top, text="WSL Settings", padding=10)
         cfg_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
         
-        ttk.Label(cfg_frame, text="WSL Distro:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(cfg_frame, text="WSL Distro:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=(0, 8))
         var_distro = tk.StringVar(value=self.config.get("wsl_distro", "Debian"))
-        ttk.Entry(cfg_frame, textvariable=var_distro, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(cfg_frame, textvariable=var_distro, width=15).grid(row=0, column=1, sticky=tk.W, padx=5, pady=(0, 8))
         
-        ttk.Label(cfg_frame, text="EMSphInx Executable Dir (WSL Path):").pack(side=tk.LEFT, padx=(15, 5))
+        ttk.Label(cfg_frame, text="EMSphInx folder (WSL path):").grid(row=1, column=0, sticky=tk.W, padx=5)
         var_wsl_dir = tk.StringVar(value=self.config.get("wsl_executable_dir", ""))
-        ttk.Entry(cfg_frame, textvariable=var_wsl_dir, width=30).pack(side=tk.LEFT, padx=5)
+        ttk.Entry(cfg_frame, textvariable=var_wsl_dir, width=30).grid(row=1, column=1, sticky=tk.EW, padx=5)
+
+        def browse():
+            # Read the current rows so unsaved mapping edits also apply.
+            drive_mappings = dict(tree_drive.item(item, "values") for item in tree_drive.get_children())
+            network_mounts = dict(tree_net.item(item, "values") for item in tree_net.get_children())
+            current_dir = utils.to_windows_path(var_wsl_dir.get(), drive_mappings, network_mounts)
+            selected = filedialog.askopenfilename(
+                parent=top,
+                initialdir=current_dir if os.path.isdir(current_dir) else os.getcwd(),
+                title="Select the Debian IndexEBSD executable",
+                filetypes=[("IndexEBSD executable", "IndexEBSD"), ("All files", "*")],
+            )
+            if selected:
+                var_wsl_dir.set(utils.to_wsl_path(os.path.dirname(selected), drive_mappings, network_mounts))
+
+        ttk.Button(cfg_frame, text="Browse…", command=browse).grid(row=1, column=2, padx=5)
+        ttk.Label(
+            cfg_frame,
+            text="Select IndexEBSD in your Windows folder; its WSL path is filled in automatically.",
+        ).grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(8, 0))
+        cfg_frame.columnconfigure(1, weight=1)
         
         notebook = ttk.Notebook(top)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)

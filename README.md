@@ -2,29 +2,39 @@
 
 EMSphInx Studio is a graphical interface for spherical indexing of EDAX (`.edaxh5` + `.up1`) and Oxford Instruments (`.h5oina`) EBSD datasets with [EMSphInx](https://github.com/EMsoft-org/EMSphInx).
 
-The Studio detects the host operating system at startup and selects the appropriate execution method:
-
-| Host | Where `IndexEBSD` runs | Paths written to NML files | Network storage |
-| --- | --- | --- | --- |
-| Windows | Inside the configured WSL distribution | Windows paths are translated to WSL paths | Configured UNC shares can be mounted automatically with `drvfs` |
-| macOS | Directly on macOS as a native executable | Native absolute macOS paths | Shares must already be mounted by macOS, normally under `/Volumes` |
-
-The viewers, NML builders, Oxford-to-UP1 conversion, job queue, progress display, and SHT library management are shared by both platforms.
+The Studio runs on Windows and macOS. On Windows, it uses Debian through Windows Subsystem for Linux (WSL) to run the EMSphInx indexing program, `IndexEBSD`. On macOS, it runs a native macOS build. The viewers, job queue, and other tools work the same way on both platforms.
 
 ## Windows / WSL
 
-### Requirements
+### 1. Install Debian / WSL
 
-- Windows with WSL 2.
-- A WSL Linux distribution such as Debian.
-- EMSphInx installed or compiled inside WSL, including the Linux `IndexEBSD` executable.
-- Python 3.8+ on Windows with Tkinter.
+On Windows 11 or Windows 10 version 2004 (build 19041) or later, open **PowerShell as administrator** (right-click PowerShell and choose **Run as administrator**) and run:
 
-The Windows application does not run a Windows build of `IndexEBSD`. It launches the Linux executable inside WSL.
+```powershell
+wsl --install -d Debian
+```
 
-### Install and launch the Studio
+This installs WSL and Debian. Restart the PC if prompted, then open **Debian** from the Start menu and complete the first-time setup by choosing a Linux username and password. You can then close the Debian window; the Studio starts WSL when needed. If Debian is already installed and set up, skip this step.
 
-From PowerShell in the EMSphInx Studio directory:
+For installation help, see [Microsoft's WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install).
+
+### 2. Put the EMSphInx binaries in a folder
+
+Extract the **precompiled Debian EMSphInx binaries** into a folder on your PC, for example:
+
+```text
+C:\Software\EMSphInx
+```
+
+Keep the supplied files together and locate the folder containing `IndexEBSD`. You do not need to compile EMSphInx or copy it into Debian's own filesystem. WSL can access the files directly from your Windows drive.
+
+For example, if the executable is `C:\Software\EMSphInx\IndexEBSD`, its folder is `/mnt/c/Software/EMSphInx` inside WSL. A folder on `D:` uses `/mnt/d/` instead. If the archive has an extra subfolder containing `IndexEBSD`, use that subfolder.
+
+### 3. Install and launch the Studio
+
+Install **Python 3.8+ for Windows**, including Tkinter (included with the standard Python installer). Download or clone this repository into a folder such as `C:\Software\EMSphInx_Studio`. Use a path without spaces, as EMSphInx has trouble reading multiple master patterns from paths containing spaces.
+
+Open a regular **PowerShell** window in the EMSphInx Studio folder and run:
 
 ```powershell
 py -3 -m venv .venv
@@ -32,16 +42,20 @@ py -3 -m venv .venv
 .venv\Scripts\python main.py
 ```
 
-### Configure WSL execution
+For later launches, run only `.venv\Scripts\python main.py` from the same folder.
+
+### 4. Point the Studio to EMSphInx
 
 Open **Settings > EMSphInx Configuration (Windows / WSL)** and configure:
 
-1. **WSL Distro**: the distribution containing EMSphInx, for example `Debian`.
-2. **EMSphInx Executable Dir**: the WSL directory containing `IndexEBSD`, for example `/mnt/c/Software/EMSphInx`.
-3. **Drive Mappings**: mappings such as `C:` to `/mnt/c`. These convert paths selected by the Windows GUI into paths accessible inside WSL.
-4. **Network Mounts**: optional UNC shares that the Studio should mount inside WSL using `drvfs`.
+1. **WSL Distro**: enter `Debian`.
+2. Next to **EMSphInx folder (WSL path)**, click **Browse…** and select `IndexEBSD` in the folder you extracted in step 2. The Studio fills in the WSL path automatically. You can also enter the folder path manually.
+3. **Drive Mappings**: check that the drives you use match their WSL paths, for example `C:` → `/mnt/c` and `D:` → `/mnt/d`.
+4. **Network Mounts**: remove any example entries you do not use. For files stored on your PC, this list can be empty.
 
-Configure mappings before generating NML files because Windows-generated NML files contain WSL paths. Existing WSL configuration keys and per-user configuration files remain supported.
+Save the settings before creating jobs. Select your data files using their normal Windows paths; the Studio converts these to WSL paths automatically.
+
+If your data is on a network share, add it under **Network Mounts** and give it a WSL mount point, for example `\\server\share` → `/mnt/n`. If you also access that share as `N:` in Windows, set its **Drive Mapping** to the same `/mnt/n` path. The Studio mounts configured shares when starting the queue.
 
 ## macOS
 
@@ -67,9 +81,9 @@ Do not launch the Studio with `/usr/bin/python3`. Apple's bundled Python uses an
 
 ### Configure native execution
 
-1. Build EMSphInx for macOS and locate the directory containing `IndexEBSD`.
+1. Locate the folder containing the native macOS `IndexEBSD` executable.
 2. Start the Studio with `.venv/bin/python main.py`.
-3. On first launch, select the directory containing `IndexEBSD`. It can be changed later under **Settings > EMSphInx Configuration (macOS)**.
+3. On first launch, click **Browse…** and select the macOS `IndexEBSD` executable. The Studio fills in its folder automatically. You can change it later under **Settings > EMSphInx Configuration (macOS)**.
 4. If necessary, make the executable runnable:
 
    ```bash
@@ -85,7 +99,7 @@ Data, SHT, output, and NML paths are passed directly to `IndexEBSD` as native ab
 3. Select or fetch SHT master patterns and generate the NML in the NML Builder.
 4. Start the queue and monitor the live `IndexEBSD` output.
 
-Oxford `.h5oina` patterns are unpacked asynchronously to `.up1` because direct indexing of the packed source has proved unreliable. Optional integer binning uses fast block averaging without interpolation. Non-divisible dimensions are center-cropped first, and the generated NML uses the corresponding output dimensions, effective pixel size, and corrected pattern center. The writer processes large datasets in bounded chunks.
+For Oxford data, the Studio automatically converts the patterns to a `.up1` file in the background before indexing. Optional binning reduces the pattern size by averaging blocks of pixels. The Studio updates the indexing parameters automatically and processes large files in chunks to limit memory use.
 
 ## Moving jobs between platforms
 
