@@ -127,64 +127,70 @@ class TabNMLOxford(ttk.Frame):
         )
         self.lbl_binning.grid(row=0, column=2, sticky=tk.W, padx=10)
 
-        # 3. Spherical indexing parameters
+        # 3. Detector calibration
+        calibration_frame = ttk.LabelFrame(
+            content, text="Detector Calibration", padding=10
+        )
+        calibration_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Label(calibration_frame, text="Delta (Calculated):").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.var_delta = tk.StringVar(value="Unknown")
+        ttk.Entry(calibration_frame, textvariable=self.var_delta, width=10, state="readonly").grid(row=0, column=1, sticky=tk.W, padx=10)
+
+        ttk.Label(calibration_frame, text="Detector tilt (°):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.var_detector_tilt = tk.StringVar(value="")
+        self.entry_detector_tilt = ttk.Entry(
+            calibration_frame, textvariable=self.var_detector_tilt, width=16
+        )
+        self.entry_detector_tilt.grid(row=1, column=1, sticky=tk.W, padx=10)
+
+        # 4. Spherical indexing parameters
         params_frame = ttk.LabelFrame(
             content, text="Spherical Indexing Parameters", padding=10
         )
         params_frame.pack(fill=tk.X, pady=10)
 
-        ttk.Label(params_frame, text="Delta (Calculated):").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.var_delta = tk.StringVar(value="Unknown")
-        ttk.Entry(params_frame, textvariable=self.var_delta, width=10, state="readonly").grid(row=0, column=1, sticky=tk.W, padx=10)
-
-        ttk.Label(params_frame, text="Detector tilt (°):").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.var_detector_tilt = tk.StringVar(value="")
-        self.entry_detector_tilt = ttk.Entry(
-            params_frame, textvariable=self.var_detector_tilt, width=16
-        )
-        self.entry_detector_tilt.grid(row=1, column=1, sticky=tk.W, padx=10)
-
-        ttk.Label(params_frame, text="Bandwidth:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Bandwidth:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.var_bw = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
-        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=2, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=0, column=1, sticky=tk.W, padx=10)
         
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
-        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=2, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=0, column=2, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.var_circmask = tk.StringVar(value="-1 (Disabled)")
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
-        self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
+        self.combo_circmask.grid(row=1, column=1, sticky=tk.W, padx=10)
 
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("gausbckg", False))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nregions", 0)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=3, column=1, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=4, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=4, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("batchsize", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=5, column=1, sticky=tk.W, padx=10)
 
         self.var_refine = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("refine", True))
-        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         self.var_normed = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("normed", False))
-        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=9, column=2, sticky=tk.W, padx=10)
+        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=7, column=2, sticky=tk.W, padx=10)
         
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=10, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=8, column=0, pady=(10, 0), sticky=tk.W)
 
-        # 4. ROI Frame
+        # 5. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
         roi_frame.pack(fill=tk.X, pady=10)
         
@@ -215,7 +221,7 @@ class TabNMLOxford(ttk.Frame):
         self.var_roi_h.trace_add("write", self.on_roi_manual_edit)
         ttk.Entry(roi_frame, textvariable=self.var_roi_h, width=8).grid(row=1, column=7)
 
-        # 5. Output Names
+        # 6. Output Names
         output_frame = ttk.LabelFrame(content, text="Output Paths", padding=10)
         output_frame.pack(fill=tk.X, pady=10)
         

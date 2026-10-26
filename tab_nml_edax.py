@@ -83,72 +83,76 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.lbl_sht_status = ttk.Label(sht_frame, text="No .sht file selected or fetched.", foreground="blue")
         self.lbl_sht_status.grid(row=2, column=0, columnspan=7, sticky=tk.W, pady=(10, 0))
 
-        # 2. Grid parameters 
-        params_frame = ttk.LabelFrame(content, text="Spherical Indexing Parameters", padding=10)
-        params_frame.pack(fill=tk.X, pady=10)
+        # 2. Detector calibration
+        calibration_frame = ttk.LabelFrame(content, text="Detector Calibration", padding=10)
+        calibration_frame.pack(fill=tk.X, pady=10)
         
-        ttk.Label(params_frame, text="Calculated Binning:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.lbl_binning = ttk.Label(params_frame, text="Unknown (Load UP1 first)", foreground="gray")
+        ttk.Label(calibration_frame, text="Calculated Binning:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.lbl_binning = ttk.Label(calibration_frame, text="Unknown (Load UP1 first)", foreground="gray")
         self.lbl_binning.grid(row=0, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Native Delta:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(calibration_frame, text="Native Delta:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.var_delta = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("native_delta", 23.0)))
-        ttk.Entry(params_frame, textvariable=self.var_delta, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(calibration_frame, textvariable=self.var_delta, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Detector tilt (°):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(calibration_frame, text="Detector tilt (°):").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.var_detector_tilt = tk.StringVar(value="")
         self.entry_detector_tilt = ttk.Entry(
-            params_frame, textvariable=self.var_detector_tilt, width=16
+            calibration_frame, textvariable=self.var_detector_tilt, width=16
         )
         self.entry_detector_tilt.grid(row=2, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Bandwidth:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        # 3. Spherical indexing parameters
+        params_frame = ttk.LabelFrame(content, text="Spherical Indexing Parameters", padding=10)
+        params_frame.pack(fill=tk.X, pady=10)
+
+        ttk.Label(params_frame, text="Bandwidth:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.var_bw = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
-        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=3, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=0, column=1, sticky=tk.W, padx=10)
         
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
-        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=3, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=0, column=2, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.var_circmask = tk.StringVar(value="0 (Enabled)")
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
-        self.combo_circmask.grid(row=4, column=1, sticky=tk.W, padx=10)
+        self.combo_circmask.grid(row=1, column=1, sticky=tk.W, padx=10)
 
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("gausbckg", True))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nregions", 10)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=6, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=3, column=1, sticky=tk.W, padx=10)
         
         hint_nregions = "(10 is a decent value. Adjust based on relative size of Kikuchi bands to pattern size, this depends on detector distance)"
-        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=6, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=3, column=2, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=4, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=4, column=1, sticky=tk.W, padx=10)
         
-        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=8, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("batchsize", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=8, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=5, column=1, sticky=tk.W, padx=10)
 
         self.var_refine = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("refine", True))
-        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         self.var_normed = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("normed", False))
-        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=10, column=0, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=10, column=2, sticky=tk.W, padx=10)
+        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=7, column=2, sticky=tk.W, padx=10)
         
         max_cpu = os.cpu_count() or "Unknown"
-        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=7, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=4, column=2, sticky=tk.W, padx=10)
 
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=11, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=8, column=0, pady=(10, 0), sticky=tk.W)
 
-        # 3. ROI Frame
+        # 4. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
         roi_frame.pack(fill=tk.X, pady=10)
         
@@ -179,7 +183,7 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.var_roi_h.trace_add("write", self.on_roi_manual_edit)
         ttk.Entry(roi_frame, textvariable=self.var_roi_h, width=8).grid(row=1, column=7)
 
-        # 4. Output NML Name
+        # 5. Output NML Name
         output_frame = ttk.LabelFrame(content, text="Output NML", padding=10)
         output_frame.pack(fill=tk.X, pady=10)
         ttk.Label(output_frame, text="File Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
