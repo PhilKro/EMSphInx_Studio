@@ -75,7 +75,7 @@ If your data is on a network share, add it under **Network Mounts** and give it 
 
 ### Requirements
 
-- macOS with Python 3.8+ and a modern Tkinter installation.
+- macOS with Python 3.12+ and a modern Tkinter installation. The pyMTEX dependency requires Python 3.12 or newer.
 - EMSphInx compiled for macOS, including a native `IndexEBSD` executable.
 
 The macOS application does not use WSL and does not translate paths. It launches the native macOS executable directly.
@@ -112,6 +112,10 @@ Data, SHT, output, and NML paths are passed directly to `IndexEBSD` as native ab
 2. Load and inspect the data in the pattern viewer. Shift-drag defines an optional indexing ROI.
 3. Select or fetch SHT master patterns and generate the NML in the NML Builder.
 4. Start the queue and monitor the live `IndexEBSD` output.
+
+In Tab 1, **Map Field** also offers **IPF X**, **IPF Y**, and **IPF Z** when the loaded scan contains indexed orientations and phase information. These maps use pyMTEX's phase-aware HSV IPF colours for the corresponding specimen directions; unindexed points are black. IPF maps are generated in the background and cached while the file is open. They use the orientations already stored in the selected scan, rather than loading separate SphInx result files. Install the updated requirements to enable this feature.
+
+IPF display requires usable crystal symmetry and lattice metadata. Oxford scans with a nonzero specimen orientation are not yet supported for IPF display; their other map fields remain available.
 
 For Oxford data, the Studio automatically converts the patterns to a `.up1` file in the background before indexing. Optional binning reduces the pattern size by averaging blocks of pixels. The Studio updates the indexing parameters automatically and processes large files in chunks to limit memory use.
 

@@ -17,6 +17,7 @@ import shutil
 from PIL import Image, ImageTk
 import utils
 from detector_tilt import read_oxford_detector_orientation
+from ipf_maps import IPF_FIELDS, IPFMapCache, ipf_available, load_ipf_maps, reshape_map
 from oxford_metadata import normalize_beam_voltage_kv, normalize_step_size_um
 
 try:
@@ -41,6 +42,7 @@ class TabViewerOxford(ttk.Frame):
         self.map_cursor_item = None
         self.roi_canvas_item = None
         self.scans_cache = {}
+        self.ipf_cache = IPFMapCache(self.app.root)
         
         self.roi_start_x = 0
         self.roi_start_y = 0
@@ -163,6 +165,8 @@ class TabViewerOxford(ttk.Frame):
         self.state.detector_tilt = None
         self.state.detector_euler = None
         self.scans_cache.clear()
+        self.ipf_cache.invalidate()
+        self._clear_map_image()
         if hasattr(self.app, 'tab_nml_oxford'):
             self.app.tab_nml_oxford.reset_detector_tilt()
         
@@ -235,6 +239,7 @@ class TabViewerOxford(ttk.Frame):
                         self.scans_cache[f"{key}/EBSD"] = {
                             "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, dd),
                             "detector_tilt": detector_tilt, "detector_euler": detector_euler,
+                            "ipf_available": ipf_available(ebsd_grp, "OXFORD"),
                             "map_fields": map_fields, "pat_types": pat_types,
                             "pat_h": pat_h, "pat_w": pat_w, "map_name": map_name, "delta": delta
                         }
@@ -258,6 +263,7 @@ class TabViewerOxford(ttk.Frame):
     def on_scan_select(self, event):
         scan = self.combo_scan.get()
         if scan in self.scans_cache:
+            self._clear_map_image()
             data = self.scans_cache[scan]
             self.var_nx.set(str(data["nx"]))
             self.var_ny.set(str(data["ny"]))
@@ -286,6 +292,8 @@ class TabViewerOxford(ttk.Frame):
                 self.combo_pat_type.current(0)
             
             fields = sorted(data.get("map_fields", []))
+            if data.get("ipf_available"):
+                fields.extend(IPF_FIELDS)
             self.combo_map_field['values'] = fields
             if "Band Contrast" in fields:
                 self.combo_map_field.set("Band Contrast")
@@ -337,8 +345,25 @@ class TabViewerOxford(ttk.Frame):
 
     def recalc_map(self):
         if not self.state.nx or not self.state.ny or self.h5_file is None: return
+        self.map_canvas.configure(cursor="")
         field = self.var_map_field.get()
         if not field: return
+        if field in IPF_FIELDS:
+            key = self._ipf_key()
+            maps = self.ipf_cache.get_or_request(
+                key, lambda: load_ipf_maps(*key, vendor="OXFORD"), self._ipf_ready
+            )
+            if maps is None:
+                self._clear_map_image()
+                self.map_canvas.configure(cursor="watch")
+                return
+            self.map_data_2d = reshape_map(
+                maps[field], self.state.nx, self.state.ny, self.var_map_row_major.get()
+            )
+            self.draw_map_image(Image.fromarray(self.map_data_2d, mode='RGB'))
+            self.update_pattern_image()
+            self.draw_roi_from_state()
+            return
         
         try:
             ds = self.h5_file[self.state.scan_name]["Data"][field]
@@ -351,10 +376,9 @@ class TabViewerOxford(ttk.Frame):
         if len(data_1d) != expected_len:
             data_1d = np.resize(data_1d, expected_len)
 
-        if self.var_map_row_major.get():
-            self.map_data_2d = data_1d.reshape((self.state.ny, self.state.nx), order='C')
-        else:
-            self.map_data_2d = data_1d.reshape((self.state.nx, self.state.ny), order='F').T
+        self.map_data_2d = reshape_map(
+            data_1d, self.state.nx, self.state.ny, self.var_map_row_major.get()
+        )
             
         map_min, map_max = self.map_data_2d.min(), self.map_data_2d.max()
         norm_map = ((self.map_data_2d - map_min) / (map_max - map_min) * 255).astype(np.uint8) if map_max > map_min else self.map_data_2d.astype(np.uint8)
@@ -362,6 +386,26 @@ class TabViewerOxford(ttk.Frame):
         
         self.update_pattern_image() 
         self.draw_roi_from_state()
+
+    def _ipf_key(self):
+        return (os.path.abspath(self.state.h5_path), "/" + self.state.scan_name.strip("/"), self.state.nx, self.state.ny)
+
+    def _ipf_ready(self, key, maps, error):
+        if key != self._ipf_key() or self.var_map_field.get() not in IPF_FIELDS:
+            return
+        if error is not None:
+            self.map_canvas.configure(cursor="")
+            messagebox.showerror("IPF Map", str(error))
+            return
+        self.recalc_map()
+
+    def _clear_map_image(self):
+        self.map_canvas.configure(cursor="")
+        self.current_map_image = None
+        self.map_data_2d = None
+        self.tk_img_map = None
+        if self.map_canvas_img_item is not None:
+            self.map_canvas.itemconfig(self.map_canvas_img_item, image="")
 
     def draw_map_image(self, img_pil):
         self.current_map_image = img_pil

@@ -109,6 +109,9 @@ class DetectorTiltWorkflowTests(unittest.TestCase):
             combo_map_field=Value(),
             var_map_field=Value(),
             init_viewer=mock.Mock(),
+            recalc_map=mock.Mock(),
+            _clear_map_image=mock.Mock(),
+            ipf_cache=mock.Mock(),
         )
         if vendor == "EDAX":
             viewer.lbl_up1_file = mock.Mock()

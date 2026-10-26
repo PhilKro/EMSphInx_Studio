@@ -3,3 +3,4 @@ hdf5plugin
 matplotlib
 numpy
 pillow
+mtex>=1.0,<2

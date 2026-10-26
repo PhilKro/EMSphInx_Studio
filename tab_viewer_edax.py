@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image, ImageTk
 import utils
 from detector_tilt import read_edax_detector_tilt
+from ipf_maps import IPF_FIELDS, IPFMapCache, ipf_available, load_ipf_maps, reshape_map
 
 try:
     import matplotlib.cm as cm
@@ -30,6 +31,7 @@ class TabViewerEdax(ttk.Frame):
         self.map_cursor_item = None
         self.roi_canvas_item = None
         self.scans_cache = {}
+        self.ipf_cache = IPFMapCache(self.app.root)
         
         self.roi_start_x = 0
         self.roi_start_y = 0
@@ -154,6 +156,8 @@ class TabViewerEdax(ttk.Frame):
         self.state.detector_tilt = None
         self.state.detector_euler = None
         self.scans_cache.clear()
+        self.ipf_cache.invalidate()
+        self._clear_map_image()
         self.app.tab_nml_edax.reset_detector_tilt()
         
         try:
@@ -192,6 +196,7 @@ class TabViewerEdax(ttk.Frame):
                                 "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, pcz),
                                 "detector_tilt": read_edax_detector_tilt(obj),
                                 "detector_euler": None,
+                                "ipf_available": ipf_available(obj["EBSD"], "EDAX") if "EBSD" in obj else False,
                                 "map_fields": map_fields, "data_len": data_len
                             }
                             
@@ -216,6 +221,7 @@ class TabViewerEdax(ttk.Frame):
     def on_scan_select(self, event):
         scan = self.combo_scan.get()
         if scan in self.scans_cache:
+            self._clear_map_image()
             data = self.scans_cache[scan]
             self.var_nx.set(str(data["nx"]))
             self.var_ny.set(str(data["ny"]))
@@ -230,11 +236,16 @@ class TabViewerEdax(ttk.Frame):
             self.state.detector_euler = None
             
             fields = ["Mean Intensity (Calculated)"] + data.get("map_fields", [])
+            if data.get("ipf_available"):
+                fields.extend(IPF_FIELDS)
             self.combo_map_field['values'] = fields
             if self.var_map_field.get() not in fields:
                 self.combo_map_field.current(0)
+            if not self.state.up1_path and self.var_map_field.get() == "Mean Intensity (Calculated)" and len(fields) > 1:
+                self.combo_map_field.set(fields[1])
             
             self.app.tab_nml_edax.update_h5_data(reset_detector_tilt=True)
+            self.recalc_map()
 
     def load_up1(self):
         start_dir = os.path.dirname(self.state.h5_path) if self.state.h5_path else os.getcwd()
@@ -275,20 +286,22 @@ class TabViewerEdax(ttk.Frame):
             messagebox.showerror("Header Error", f"Could not read UP1 header:\n{e}")
 
     def init_viewer(self):
-        if not self.state.up1_path or self.state.pat_w == 0:
-            messagebox.showerror("Error", "Please load a valid .up1 file first.")
+        if not self.state.nx or not self.state.ny:
+            messagebox.showerror("Error", "Please load a scan first.")
             return
 
         nx, ny = self.state.nx, self.state.ny
-        expected_bytes = nx * ny * self.state.pat_w * self.state.pat_h
-        actual_size = os.path.getsize(self.state.up1_path)
-        
-        if (actual_size - self.state.byte_start) != expected_bytes:
-            resp = messagebox.askyesno("Size Warning", "File size mismatch. Map may look distorted.\nProceed?")
-            if not resp: return
-
         try:
-            self.mmap = np.memmap(self.state.up1_path, dtype='uint8', mode='r', offset=self.state.byte_start, shape=(nx * ny, self.state.pat_w * self.state.pat_h))
+            if self.state.up1_path and self.state.pat_w > 0:
+                expected_bytes = nx * ny * self.state.pat_w * self.state.pat_h
+                actual_size = os.path.getsize(self.state.up1_path)
+                if (actual_size - self.state.byte_start) != expected_bytes:
+                    resp = messagebox.askyesno("Size Warning", "File size mismatch. Map may look distorted.\nProceed?")
+                    if not resp:
+                        return
+                self.mmap = np.memmap(self.state.up1_path, dtype='uint8', mode='r', offset=self.state.byte_start, shape=(nx * ny, self.state.pat_w * self.state.pat_h))
+            else:
+                self.mmap = None
             self.scale_x.config(to=max(1, nx-1))
             self.scale_y.config(to=max(1, ny-1))
             self.var_x.set(0); self.var_y.set(0)
@@ -300,7 +313,25 @@ class TabViewerEdax(ttk.Frame):
 
     def recalc_map(self):
         if not self.state.nx or not self.state.ny: return
+        self.map_canvas.configure(cursor="")
         field = self.var_map_field.get()
+        if field in IPF_FIELDS:
+            key = self._ipf_key()
+            maps = self.ipf_cache.get_or_request(
+                key, lambda: load_ipf_maps(*key, vendor="EDAX"), self._ipf_ready
+            )
+            if maps is None:
+                self._clear_map_image()
+                self.map_canvas.configure(cursor="watch")
+                return
+            self.map_data_2d = reshape_map(
+                maps[field], self.state.nx, self.state.ny, self.var_map_row_major.get()
+            )
+            self.draw_map_image(Image.fromarray(self.map_data_2d, mode='RGB'))
+            if self.mmap is not None:
+                self.update_pattern_image()
+            self.draw_roi_from_state()
+            return
         if field == "Mean Intensity (Calculated)":
             if self.mmap is None: return
             step = max(1, (self.state.pat_w * self.state.pat_h) // 100)
@@ -319,10 +350,9 @@ class TabViewerEdax(ttk.Frame):
         if len(data_1d) != expected_len:
             data_1d = np.resize(data_1d, expected_len)
 
-        if self.var_map_row_major.get():
-            self.map_data_2d = data_1d.reshape((self.state.ny, self.state.nx), order='C')
-        else:
-            self.map_data_2d = data_1d.reshape((self.state.nx, self.state.ny), order='F').T
+        self.map_data_2d = reshape_map(
+            data_1d, self.state.nx, self.state.ny, self.var_map_row_major.get()
+        )
             
         map_min, map_max = self.map_data_2d.min(), self.map_data_2d.max()
         norm_map = ((self.map_data_2d - map_min) / (map_max - map_min) * 255).astype(np.uint8) if map_max > map_min else self.map_data_2d.astype(np.uint8)
@@ -331,6 +361,26 @@ class TabViewerEdax(ttk.Frame):
         if self.mmap is not None:
             self.update_pattern_image() 
         self.draw_roi_from_state()
+
+    def _ipf_key(self):
+        return (os.path.abspath(self.state.h5_path), "/" + self.state.scan_name.strip("/") + "/EBSD", self.state.nx, self.state.ny)
+
+    def _ipf_ready(self, key, maps, error):
+        if key != self._ipf_key() or self.var_map_field.get() not in IPF_FIELDS:
+            return
+        if error is not None:
+            self.map_canvas.configure(cursor="")
+            messagebox.showerror("IPF Map", str(error))
+            return
+        self.recalc_map()
+
+    def _clear_map_image(self):
+        self.map_canvas.configure(cursor="")
+        self.current_map_image = None
+        self.map_data_2d = None
+        self.tk_img_map = None
+        if self.map_canvas_img_item is not None:
+            self.map_canvas.itemconfig(self.map_canvas_img_item, image="")
 
     def draw_map_image(self, img_pil):
         self.current_map_image = img_pil
