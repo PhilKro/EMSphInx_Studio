@@ -16,6 +16,7 @@ import json
 import shutil
 from PIL import Image, ImageTk
 import utils
+from detector_tilt import read_oxford_detector_orientation
 from oxford_metadata import normalize_beam_voltage_kv, normalize_step_size_um
 
 try:
@@ -158,7 +159,12 @@ class TabViewerOxford(ttk.Frame):
         filepath = filedialog.askopenfilename(filetypes=[("Oxford H5OINA", "*.h5oina *.h5")])
         if not filepath: return
         self.state.h5_path = filepath
+        self.state.scan_name = ""
+        self.state.detector_tilt = None
+        self.state.detector_euler = None
         self.scans_cache.clear()
+        if hasattr(self.app, 'tab_nml_oxford'):
+            self.app.tab_nml_oxford.reset_detector_tilt()
         
         if self.h5_file is not None:
             self.h5_file.close()
@@ -225,8 +231,10 @@ class TabViewerOxford(ttk.Frame):
                             elif "full" in bmode or "resolution" in bmode:
                                 delta = 20.0
 
+                        detector_tilt, detector_euler = read_oxford_detector_orientation(header)
                         self.scans_cache[f"{key}/EBSD"] = {
                             "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, dd),
+                            "detector_tilt": detector_tilt, "detector_euler": detector_euler,
                             "map_fields": map_fields, "pat_types": pat_types,
                             "pat_h": pat_h, "pat_w": pat_w, "map_name": map_name, "delta": delta
                         }
@@ -242,6 +250,9 @@ class TabViewerOxford(ttk.Frame):
                 messagebox.showwarning("No Scans", "Could not find Oxford EBSD maps.")
                 
         except Exception as e:
+            self.scans_cache.clear()
+            self.combo_scan['values'] = []
+            self.combo_scan.set('')
             messagebox.showerror("Error", str(e))
 
     def on_scan_select(self, event):
@@ -257,6 +268,8 @@ class TabViewerOxford(ttk.Frame):
             self.state.step_size = data["step"]
             self.state.acc_voltage = data["kv"]
             self.state.pc = data["pc"]
+            self.state.detector_tilt = data["detector_tilt"]
+            self.state.detector_euler = data["detector_euler"]
             
             self.state.pat_w = data["pat_w"]
             self.state.pat_h = data["pat_h"]
@@ -280,7 +293,7 @@ class TabViewerOxford(ttk.Frame):
                 self.combo_map_field.current(0)
             
             if hasattr(self.app, 'tab_nml_oxford'):
-                self.app.tab_nml_oxford.update_h5_data()
+                self.app.tab_nml_oxford.update_h5_data(reset_detector_tilt=True)
             
             self.init_viewer()
 

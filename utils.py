@@ -459,6 +459,8 @@ class SharedState:
         self.step_size = 1.0
         self.acc_voltage = 30.0 
         self.pc = (0.5, 0.5, 0.5) 
+        self.detector_tilt = None  # Camera elevation in degrees; None if absent.
+        self.detector_euler = None  # Original Oxford detector Euler angles in radians.
         self.use_roi = False
         self.roi = (0, 0, 0, 0)
         self.up1_tasks = {} # Tracks currently writing UP1 files and their mem reqs/dependent jobs

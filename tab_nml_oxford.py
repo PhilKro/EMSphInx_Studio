@@ -16,6 +16,7 @@ import json
 import shutil
 from PIL import Image, ImageTk
 import utils
+from detector_tilt import oxford_elevation_only, resolve_detector_tilt, validate_detector_tilt
 import webbrowser
 from oxford_filenames import next_nml_name, output_name_parts
 from oxford_binning import bin_patterns, binning_geometry, emsoft_calibration
@@ -136,45 +137,52 @@ class TabNMLOxford(ttk.Frame):
         self.var_delta = tk.StringVar(value="Unknown")
         ttk.Entry(params_frame, textvariable=self.var_delta, width=10, state="readonly").grid(row=0, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Bandwidth:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Detector tilt (°):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.var_detector_tilt = tk.StringVar(value="")
+        self.entry_detector_tilt = ttk.Entry(
+            params_frame, textvariable=self.var_detector_tilt, width=16
+        )
+        self.entry_detector_tilt.grid(row=1, column=1, sticky=tk.W, padx=10)
+
+        ttk.Label(params_frame, text="Bandwidth:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.var_bw = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
-        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=2, column=1, sticky=tk.W, padx=10)
         
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
-        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=1, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=2, column=2, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.var_circmask = tk.StringVar(value="-1 (Disabled)")
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
-        self.combo_circmask.grid(row=2, column=1, sticky=tk.W, padx=10)
+        self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
 
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("gausbckg", False))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=4, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nregions", 0)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=4, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=5, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=7, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("OXFORD", {}).get("batchsize", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
 
         self.var_refine = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("refine", True))
-        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         self.var_normed = tk.BooleanVar(value=self.app.params.get("OXFORD", {}).get("normed", False))
-        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=8, column=2, sticky=tk.W, padx=10)
+        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=9, column=2, sticky=tk.W, padx=10)
         
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=9, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=10, column=0, pady=(10, 0), sticky=tk.W)
 
         # 4. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
@@ -345,7 +353,20 @@ class TabNMLOxford(ttk.Frame):
         self.var_up1_name.set(up1_name)
         self.var_nml_name.set(next_nml_name(h5_dir, nml_prefix, legacy_nml_prefix))
 
-    def update_h5_data(self):
+    def reset_detector_tilt(self):
+        self.var_detector_tilt.set("")
+        if not self.state.scan_name:
+            return
+        try:
+            imported = resolve_detector_tilt(self.state.detector_tilt)
+        except ValueError as e:
+            messagebox.showerror("Invalid Detector Tilt", str(e))
+            return
+        self.var_detector_tilt.set(f"{imported:.10g}")
+
+    def update_h5_data(self, reset_detector_tilt=False):
+        if reset_detector_tilt:
+            self.reset_detector_tilt()
         if self.state.h5_path:
             self.var_work_dir.set(os.path.dirname(self.state.h5_path))
 
@@ -363,6 +384,7 @@ class TabNMLOxford(ttk.Frame):
             self._update_output_names(geometry.factor)
 
     def reset_defaults(self):
+        self.reset_detector_tilt()
         try:
             with open(utils.DEFAULTS_FILE, 'r') as f:
                 defs = json.load(f)
@@ -512,9 +534,18 @@ class TabNMLOxford(ttk.Frame):
             self.lbl_sht_status.config(text=f"Total: {self.sht_listbox.size()} file(s) in list", foreground="green")
 
     def generate_and_queue(self):
-        if not self.state.h5_path:
+        if not self.state.h5_path or not self.state.scan_name:
             messagebox.showerror("Error", "Please load an H5OINA file in Tab 1 first.")
             return
+
+        try:
+            detector_tilt = validate_detector_tilt(self.var_detector_tilt.get())
+        except ValueError as e:
+            messagebox.showerror("Invalid Detector Tilt", str(e))
+            return
+        detector_euler = self.state.detector_euler
+        elevation_only = oxford_elevation_only(detector_euler)
+        elevation_note = "Detector elevation only; detector azimuth/twist not applied by SphInx."
 
         pat_type = "Processed Patterns"
         if hasattr(self.app.tab_viewer_oxford, 'combo_pat_type'):
@@ -704,7 +735,11 @@ class TabNMLOxford(ttk.Frame):
                 f_nml.write(f" delta      = {effective_delta},\n")
                 f_nml.write(f" pctr       = {PC_X_Emsoft:.6f}, {PC_Y_Emsoft:.6f}, {DD_Emsoft:.6f},\n")
                 f_nml.write(" vendor     = 'EMsoft',\n")
-                f_nml.write(" thetac     = 0.0,\n\n")
+                if elevation_only:
+                    euler_text = ", ".join(repr(angle) for angle in detector_euler)
+                    f_nml.write(f"! Oxford Detector Orientation Euler (radians): {euler_text}\n")
+                    f_nml.write(f"! {elevation_note}\n")
+                f_nml.write(f" thetac     = {detector_tilt:.10g},\n\n")
                 f_nml.write("!#################################################################\n")
                 f_nml.write("! Scan Information\n")
                 f_nml.write("!#################################################################\n")
@@ -744,6 +779,10 @@ class TabNMLOxford(ttk.Frame):
         status_text = "Pending" if skip_up1 else "Writing .up1 file (0.0%)"
         item_id = self.app.tab_queue.add_job(self.state.scan_name, out_nml, status=status_text)
         job_config["item_id"] = item_id
+        if elevation_only:
+            self.app.tab_queue.append_console(
+                f"\n{os.path.basename(out_nml)}: {elevation_note}\n"
+            )
 
         self.lbl_progress.config(text="Job queued successfully.")
         self.app.notebook.select(self.app.tab_queue)

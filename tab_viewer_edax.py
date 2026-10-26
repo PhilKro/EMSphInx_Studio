@@ -6,6 +6,7 @@ import struct
 import numpy as np
 from PIL import Image, ImageTk
 import utils
+from detector_tilt import read_edax_detector_tilt
 
 try:
     import matplotlib.cm as cm
@@ -149,7 +150,11 @@ class TabViewerEdax(ttk.Frame):
         filepath = filedialog.askopenfilename(filetypes=[("EDAX HDF5", "*.edaxh5 *.h5")])
         if not filepath: return
         self.state.h5_path = filepath
+        self.state.scan_name = ""
+        self.state.detector_tilt = None
+        self.state.detector_euler = None
         self.scans_cache.clear()
+        self.app.tab_nml_edax.reset_detector_tilt()
         
         try:
             with h5py.File(filepath, 'r') as f:
@@ -185,6 +190,8 @@ class TabViewerEdax(ttk.Frame):
 
                             self.scans_cache[name] = {
                                 "nx": nx, "ny": ny, "step": step, "kv": kv, "pc": (pcx, pcy, pcz),
+                                "detector_tilt": read_edax_detector_tilt(obj),
+                                "detector_euler": None,
                                 "map_fields": map_fields, "data_len": data_len
                             }
                             
@@ -201,6 +208,9 @@ class TabViewerEdax(ttk.Frame):
                 messagebox.showwarning("No Scans", "Could not find standard OIM Map scans.")
                 
         except Exception as e:
+            self.scans_cache.clear()
+            self.combo_scan['values'] = []
+            self.combo_scan.set('')
             messagebox.showerror("Error", str(e))
 
     def on_scan_select(self, event):
@@ -216,13 +226,15 @@ class TabViewerEdax(ttk.Frame):
             self.state.step_size = data["step"]
             self.state.acc_voltage = data["kv"]
             self.state.pc = data["pc"]
+            self.state.detector_tilt = data["detector_tilt"]
+            self.state.detector_euler = None
             
             fields = ["Mean Intensity (Calculated)"] + data.get("map_fields", [])
             self.combo_map_field['values'] = fields
             if self.var_map_field.get() not in fields:
                 self.combo_map_field.current(0)
             
-            self.app.tab_nml_edax.update_h5_data()
+            self.app.tab_nml_edax.update_h5_data(reset_detector_tilt=True)
 
     def load_up1(self):
         start_dir = os.path.dirname(self.state.h5_path) if self.state.h5_path else os.getcwd()
@@ -241,6 +253,7 @@ class TabViewerEdax(ttk.Frame):
                 self.state.byte_start = header[3]
                 self.lbl_pat_dims.config(text=f"Pattern Dims: {self.state.pat_w} x {self.state.pat_h}")
                 
+            scan_selected = False
             if self.state.pat_w > 0 and self.state.pat_h > 0 and self.scans_cache:
                 total_bytes = os.path.getsize(filepath)
                 total_pats = (total_bytes - self.state.byte_start) // (self.state.pat_w * self.state.pat_h)
@@ -252,9 +265,11 @@ class TabViewerEdax(ttk.Frame):
                     if h5_pats == total_pats:
                         self.combo_scan.set(scan_name)
                         self.on_scan_select(None)
+                        scan_selected = True
                         break
 
-            self.app.tab_nml_edax.update_h5_data()
+            if not scan_selected:
+                self.app.tab_nml_edax.update_h5_data(reset_detector_tilt=True)
 
         except Exception as e:
             messagebox.showerror("Header Error", f"Could not read UP1 header:\n{e}")

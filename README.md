@@ -101,6 +101,10 @@ Data, SHT, output, and NML paths are passed directly to `IndexEBSD` as native ab
 
 For Oxford data, the Studio automatically converts the patterns to a `.up1` file in the background before indexing. Optional binning reduces the pattern size by averaging blocks of pixels. The Studio updates the indexing parameters automatically and processes large files in chunks to limit memory use.
 
+Detector tilt is read from the selected scan and written to the SphInx NML as `thetac` in degrees. EDAX camera elevation is used directly; Oxford `Detector Orientation Euler` is read in radians and converted as `Phi × 180/π − 90`. SphInx applies this scalar elevation only. If the Oxford orientation also has azimuth or twist, the Studio preserves the original Euler angles in the NML comments and reports the unapplied rotations in the job console. Invalid angles and unsupported EDAX azimuth are reported as errors. When EDAX H5 calibration lacks the angle, the Studio checks the `.ang` file with the same stem as the selected `.up1` for `CameraElevationAngle`. If neither source provides an angle, detector tilt defaults to 0°. Sample tilt continues to come from the SHT master pattern. Existing NML files are used as supplied.
+
+Both NML parameter tabs show the imported angle in the editable **Detector tilt (°)** field. Edits apply to the generated job and are not saved as application defaults. Selecting another scan or EDAX UP1 restores that source's imported angle; **Reset to Defaults** also restores the imported angle. Binning and pattern-display changes preserve your edit. Values must be finite and between −60° and +60°.
+
 ## Moving jobs between platforms
 
 NML files contain platform-specific absolute paths:

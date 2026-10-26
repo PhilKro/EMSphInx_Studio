@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import utils
+from detector_tilt import resolve_detector_tilt, validate_detector_tilt
 import webbrowser
 import threading
 
@@ -94,51 +95,58 @@ class TabNMLBuilderEdax(ttk.Frame):
         self.var_delta = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("native_delta", 23.0)))
         ttk.Entry(params_frame, textvariable=self.var_delta, width=10).grid(row=1, column=1, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Bandwidth:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Detector tilt (°):").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.var_detector_tilt = tk.StringVar(value="")
+        self.entry_detector_tilt = ttk.Entry(
+            params_frame, textvariable=self.var_detector_tilt, width=16
+        )
+        self.entry_detector_tilt.grid(row=2, column=1, sticky=tk.W, padx=10)
+
+        ttk.Label(params_frame, text="Bandwidth:").grid(row=3, column=0, sticky=tk.W, pady=5)
         self.var_bw = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("bw", 123)))
         self.var_bw.trace_add("write", self.on_bw_change)
-        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=2, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_bw, width=10).grid(row=3, column=1, sticky=tk.W, padx=10)
         
         bw_hint = "Recommended: 53, 63, 68, 74, 88, 95, 113, 122, 123, 158, 172, 188, 203, 221, 263, 284, 313"
-        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=2, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=bw_hint, foreground="gray", font=("Helvetica", 8)).grid(row=3, column=2, sticky=tk.W, padx=10)
 
-        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Circular Mask (circmask):").grid(row=4, column=0, sticky=tk.W, pady=5)
         self.var_circmask = tk.StringVar(value="0 (Enabled)")
         self.combo_circmask = ttk.Combobox(params_frame, textvariable=self.var_circmask, values=["0 (Enabled)", "-1 (Disabled)"], state="readonly", width=15)
-        self.combo_circmask.grid(row=3, column=1, sticky=tk.W, padx=10)
+        self.combo_circmask.grid(row=4, column=1, sticky=tk.W, padx=10)
 
         self.var_gausbckg = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("gausbckg", True))
         self.var_gausbckg.trace_add("write", self.on_gaus_change)
-        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
+        ttk.Checkbutton(params_frame, text="Apply Gaussian Background (gausbckg)", variable=self.var_gausbckg).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 5))
         
-        ttk.Label(params_frame, text="NRegions:").grid(row=5, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="NRegions:").grid(row=6, column=0, sticky=tk.W, pady=5)
         self.var_nregions = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nregions", 10)))
         self.entry_nregions = ttk.Entry(params_frame, textvariable=self.var_nregions, width=10)
-        self.entry_nregions.grid(row=5, column=1, sticky=tk.W, padx=10)
+        self.entry_nregions.grid(row=6, column=1, sticky=tk.W, padx=10)
         
         hint_nregions = "(10 is a decent value. Adjust based on relative size of Kikuchi bands to pattern size, this depends on detector distance)"
-        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=5, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=hint_nregions, foreground="gray", font=("Helvetica", 8)).grid(row=6, column=2, sticky=tk.W, padx=10)
         self.on_gaus_change()
 
-        ttk.Label(params_frame, text="Threads (nthread):").grid(row=6, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Threads (nthread):").grid(row=7, column=0, sticky=tk.W, pady=5)
         self.var_nthread = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("nthread", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=6, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_nthread, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
         
-        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=7, column=0, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="Batch Size (batchsize):").grid(row=8, column=0, sticky=tk.W, pady=5)
         self.var_batchsize = tk.StringVar(value=str(self.app.params.get("EDAX", {}).get("batchsize", 0)))
-        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=7, column=1, sticky=tk.W, padx=10)
+        ttk.Entry(params_frame, textvariable=self.var_batchsize, width=10).grid(row=8, column=1, sticky=tk.W, padx=10)
 
         self.var_refine = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("refine", True))
-        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(params_frame, text="Refine (refine)", variable=self.var_refine).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5)
 
         self.var_normed = tk.BooleanVar(value=self.app.params.get("EDAX", {}).get("normed", False))
-        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=5)
-        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=9, column=2, sticky=tk.W, padx=10)
+        ttk.Checkbutton(params_frame, text="Normalize (normed)", variable=self.var_normed).grid(row=10, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Label(params_frame, text="norm=true only works after fixing some bugs in idx.hpp", foreground="gray", font=("Helvetica", 8)).grid(row=10, column=2, sticky=tk.W, padx=10)
         
         max_cpu = os.cpu_count() or "Unknown"
-        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=6, column=2, sticky=tk.W, padx=10)
+        ttk.Label(params_frame, text=f"(0 = use maximum available threads. Detected: {max_cpu} logical cores)", foreground="gray", font=("Helvetica", 8)).grid(row=7, column=2, sticky=tk.W, padx=10)
 
-        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=10, column=0, pady=(10, 0), sticky=tk.W)
+        ttk.Button(params_frame, text="Reset to Defaults", command=self.reset_defaults).grid(row=11, column=0, pady=(10, 0), sticky=tk.W)
 
         # 3. ROI Frame
         roi_frame = ttk.LabelFrame(content, text="Region of Interest (ROI) [Syncs with Tab 1 map]", padding=10)
@@ -247,7 +255,22 @@ class TabNMLBuilderEdax(ttk.Frame):
             if bw_str.isdigit():
                 self.var_nml_name.set(f"{parts[0]}_BW{bw_str}.nml")
 
-    def update_h5_data(self):
+    def reset_detector_tilt(self):
+        self.var_detector_tilt.set("")
+        if not self.state.scan_name:
+            return
+        try:
+            imported = resolve_detector_tilt(
+                self.state.detector_tilt, self.state.up1_path
+            )
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Invalid Detector Tilt", str(e))
+            return
+        self.var_detector_tilt.set(f"{imported:.10g}")
+
+    def update_h5_data(self, reset_detector_tilt=False):
+        if reset_detector_tilt:
+            self.reset_detector_tilt()
         if self.state.h5_path:
             self.var_work_dir.set(os.path.dirname(self.state.h5_path))
 
@@ -268,6 +291,7 @@ class TabNMLBuilderEdax(ttk.Frame):
             self.var_nml_name.set(f"{up1_basename}_{scan_leaf}_BW{bw}.nml")
 
     def reset_defaults(self):
+        self.reset_detector_tilt()
         try:
             with open(utils.DEFAULTS_FILE, 'r') as f:
                 defs = json.load(f)
@@ -410,10 +434,16 @@ class TabNMLBuilderEdax(ttk.Frame):
             self.lbl_sht_status.config(text=f"Total: {self.sht_listbox.size()} file(s) in list", foreground="green")
 
     def generate_and_queue(self):
-        if not self.state.up1_path or not self.state.h5_path:
+        if not self.state.up1_path or not self.state.h5_path or not self.state.scan_name:
             messagebox.showerror("Error", "Please load UP1 and H5 files in Tab 1 first.")
             return
-            
+
+        try:
+            detector_tilt = validate_detector_tilt(self.var_detector_tilt.get())
+        except ValueError as e:
+            messagebox.showerror("Invalid Detector Tilt", str(e))
+            return
+
         sht_paths = list(self.sht_listbox.get(0, tk.END))
         if not sht_paths:
             messagebox.showerror("Error", "Please fetch or specify at least one valid Master Pattern (.sht) file first.")
@@ -524,7 +554,7 @@ class TabNMLBuilderEdax(ttk.Frame):
                 f.write(f" delta      = {delta},\n")
                 f.write(f" pctr       = {PCx_emsoft:.6f}, {PCy_emsoft:.6f}, {DD_emsoft:.6f},\n")
                 f.write(" vendor     = 'EMsoft',\n")
-                f.write(" thetac     = 0.0,\n\n")
+                f.write(f" thetac     = {detector_tilt:.10g},\n\n")
                 f.write("!#################################################################\n")
                 f.write("! Scan Information\n")
                 f.write("!#################################################################\n")
