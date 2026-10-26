@@ -32,17 +32,31 @@ For example, if the executable is `C:\Software\EMSphInx\IndexEBSD`, its folder i
 
 ### 3. Install and launch the Studio
 
-Install **Python 3.8+ for Windows**, including Tkinter (included with the standard Python installer). Download or clone this repository into a folder such as `C:\Software\EMSphInx_Studio`. Use a path without spaces, as EMSphInx has trouble reading multiple master patterns from paths containing spaces.
+Install standard **64-bit Python 3.13 for Windows**, including Tkinter (included with the standard Python installer), from the [Python Windows downloads](https://www.python.org/downloads/windows/) page. Download or clone this repository into a folder such as `C:\Software\EMSphInx_Studio`. Use a path without spaces, as EMSphInx has trouble reading multiple master patterns from paths containing spaces.
+
+Select Python 3.13 explicitly: newer Python versions can arrive before compatible prebuilt packages are available. In particular, Python 3.15 can cause `h5py` to compile from source and fail with a missing `hdf5.dll` error. The commands below require prebuilt packages so installation does not attempt to compile HDF5 dependencies.
 
 Open a regular **PowerShell** window in the EMSphInx Studio folder and run:
 
 ```powershell
-py -3 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python main.py
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r requirements.txt
+.\.venv\Scripts\python.exe main.py
 ```
 
-For later launches, run only `.venv\Scripts\python main.py` from the same folder.
+For later launches, run only `.\.venv\Scripts\python.exe main.py` from the same folder.
+
+If installation has already failed with `Failed building wheel for h5py` or a missing `hdf5.dll`, install Python 3.13 as above and create a fresh environment from the Studio folder:
+
+```powershell
+py -3.13 -m venv .venv313
+.\.venv313\Scripts\python.exe -m pip install --upgrade pip
+.\.venv313\Scripts\python.exe -m pip install --only-binary=:all: -r requirements.txt
+.\.venv313\Scripts\python.exe main.py
+```
+
+This leaves the old environment intact. Use `.\.venv313\Scripts\python.exe main.py` for subsequent launches after this recovery. Installing another Python version does not change the Python version of an existing virtual environment; use the fresh environment rather than reusing one created with Python 3.15. Prebuilt `h5py` packages include HDF5, so this installation does not require a separate HDF5 installation or a compiler.
 
 ### 4. Point the Studio to EMSphInx
 
