@@ -16,6 +16,7 @@ import json
 import shutil
 from PIL import Image, ImageTk
 import utils
+from structure_labels import STRUCTURE_CHOICES, structure_code, structure_label
 from detector_tilt import oxford_elevation_only, resolve_detector_tilt, validate_detector_tilt
 import webbrowser
 from oxford_filenames import next_nml_name, output_name_parts
@@ -64,8 +65,8 @@ class TabNMLOxford(ttk.Frame):
         ttk.Entry(sht_frame, textvariable=self.var_element, width=8).grid(row=0, column=1, padx=(5, 15))
         
         ttk.Label(sht_frame, text="Structure:").grid(row=0, column=2, sticky=tk.W, pady=5)
-        self.var_struct = tk.StringVar(value="[A1]")
-        self.combo_struct = ttk.Combobox(sht_frame, textvariable=self.var_struct, width=8)
+        self.var_struct = tk.StringVar(value=structure_label("[A1]"))
+        self.combo_struct = ttk.Combobox(sht_frame, textvariable=self.var_struct, values=STRUCTURE_CHOICES, width=20)
         self.combo_struct.grid(row=0, column=3, padx=(5, 5))
         
         ttk.Button(sht_frame, text="Load Structures", command=self.load_structures).grid(row=0, column=4, padx=(0, 15))
@@ -433,7 +434,7 @@ class TabNMLOxford(ttk.Frame):
                 
                 def _update():
                     if structures:
-                        vals = sorted(list(structures))
+                        vals = [structure_label(code) for code in sorted(structures)]
                         self.combo_struct['values'] = vals
                         self.combo_struct.set(vals[0])
                     else:
@@ -449,11 +450,7 @@ class TabNMLOxford(ttk.Frame):
 
     def fetch_sht(self):
         element = self.var_element.get().strip().lower()
-        struct_type = self.var_struct.get().strip().lower()
-        if struct_type and not struct_type.startswith('['):
-            struct_type = f"[{struct_type}"
-        if struct_type and not struct_type.endswith(']'):
-            struct_type = f"{struct_type}]"
+        struct_type = structure_code(self.var_struct.get())
             
         kv = self.var_kv.get().strip()
         
